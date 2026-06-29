@@ -15,10 +15,16 @@ os.environ["DB_PATH"] = ":memory:"
 
 
 @pytest.fixture(autouse=True)
-def reset_db_path(tmp_path, monkeypatch):
-    """Use a temporary database for each test."""
+async def reset_db_path(tmp_path, monkeypatch):
+    """Use a temporary database for each test and reset shared connection."""
+    from app import database
+    # Close any existing shared connection from a previous test
+    await database.close_db()
     db_file = str(tmp_path / "test.db")
     monkeypatch.setattr("app.config.settings.db_path", db_file)
+    yield
+    # Cleanup shared connection after test
+    await database.close_db()
 
 
 @pytest.fixture

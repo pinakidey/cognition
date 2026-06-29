@@ -6,10 +6,28 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-HEADERS = {
-    "Authorization": f"Bearer {settings.devin_api_key}",
-    "Content-Type": "application/json",
-}
+# Shared HTTP client for Devin API (connection reuse)
+_devin_client: httpx.AsyncClient | None = None
+
+
+def _get_devin_client() -> httpx.AsyncClient:
+    global _devin_client
+    if _devin_client is None or _devin_client.is_closed:
+        _devin_client = httpx.AsyncClient(
+            timeout=30,
+            headers={
+                "Authorization": f"Bearer {settings.devin_api_key}",
+                "Content-Type": "application/json",
+            },
+        )
+    return _devin_client
+
+
+async def close_devin_client() -> None:
+    global _devin_client
+    if _devin_client and not _devin_client.is_closed:
+        await _devin_client.aclose()
+        _devin_client = None
 
 
 async def create_session(prompt: str, tags: list[str] | None = None) -> dict:
@@ -21,19 +39,18 @@ async def create_session(prompt: str, tags: list[str] | None = None) -> dict:
     if tags:
         payload["tags"] = tags
 
+    client = _get_devin_client()
     last_error: Exception | None = None
     for attempt in range(1, settings.max_retry_attempts + 1):
         try:
-            async with httpx.AsyncClient(timeout=30) as client:
-                response = await client.post(
-                    f"{settings.devin_api_base}/sessions",
-                    headers=HEADERS,
-                    json=payload,
-                )
-                response.raise_for_status()
-                data = response.json()
-                logger.info("Created Devin session: %s (attempt %d)", data.get("session_id"), attempt)
-                return data
+            response = await client.post(
+                f"{settings.devin_api_base}/sessions",
+                json=payload,
+            )
+            response.raise_for_status()
+            data = response.json()
+            logger.info("Created Devin session: %s (attempt %d)", data.get("session_id"), attempt)
+            return data
         except (httpx.HTTPStatusError, httpx.RequestError) as e:
             last_error = e
             if attempt < settings.max_retry_attempts:
@@ -54,10 +71,9 @@ async def create_session(prompt: str, tags: list[str] | None = None) -> dict:
 
 async def get_session(session_id: str) -> dict:
     """Get session details including status."""
-    async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.get(
-            f"{settings.devin_api_base}/sessions/{session_id}",
-            headers=HEADERS,
-        )
-        response.raise_for_status()
-        return response.json()
+    client = _get_devin_client()
+    response = await client.get(
+        f"{settings.devin_api_base}/sessions/{session_id}",
+    )
+    response.raise_for_status()
+    return response.json()

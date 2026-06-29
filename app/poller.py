@@ -117,114 +117,129 @@ async def _handle_stale_job(job: dict) -> None:
         )
 
 
-async def poll_active_jobs() -> None:
-    """Poll all active Devin sessions and update job status."""
-    jobs = await get_active_jobs()
-
-    for job in jobs:
-        # Check for stale/timed-out jobs first
-        if _is_job_stale(job):
-            try:
-                await _handle_stale_job(job)
-            except Exception:
-                logger.exception("Error handling stale job %d", job["id"])
-            continue
-
-        session_id = job.get("session_id")
-        if not session_id:
-            continue
-
+async def _poll_single_job(job: dict) -> None:
+    """Poll a single job — handles stale check and session status."""
+    if _is_job_stale(job):
         try:
-            session_data = await get_session(session_id)
-            status = session_data.get("status_enum", "unknown")
+            await _handle_stale_job(job)
+        except Exception:
+            logger.exception("Error handling stale job %d", job["id"])
+        return
 
-            if status == "finished":
-                pr_url = extract_pr_url(session_data)
-                await update_job(
-                    job["id"],
-                    status="completed" if pr_url else "finished_no_pr",
-                    pr_url=pr_url,
-                    last_notified_status="finished",
+    session_id = job.get("session_id")
+    if not session_id:
+        return
+
+    try:
+        session_data = await get_session(session_id)
+        status = session_data.get("status_enum", "unknown")
+        await _process_job_status(job, status, session_data)
+    except Exception:
+        logger.exception("Error polling session %s for job %d", session_id, job["id"])
+
+
+async def poll_active_jobs() -> None:
+    """Poll all active Devin sessions concurrently and update job status."""
+    jobs = await get_active_jobs()
+    if not jobs:
+        return
+
+    # Poll all jobs concurrently for better throughput
+    await asyncio.gather(*[_poll_single_job(job) for job in jobs], return_exceptions=True)
+
+
+async def _process_job_status(job: dict, status: str, session_data: dict) -> None:
+    """Process the status of a polled session."""
+    if status == "finished":
+        pr_url = extract_pr_url(session_data)
+        await update_job(
+            job["id"],
+            status="completed" if pr_url else "finished_no_pr",
+            pr_url=pr_url,
+            last_notified_status="finished",
+        )
+
+        # Notify on completion
+        parsed = parse_issue_url(job["issue_url"])
+        if parsed:
+            repo, issue_number = parsed
+            if pr_url:
+                await comment_on_issue(
+                    repo,
+                    issue_number,
+                    f"✅ **Remediation complete**\n\n"
+                    f"Pull Request: {pr_url}",
+                )
+            else:
+                await comment_on_issue(
+                    repo,
+                    issue_number,
+                    f"⚠️ **Remediation session finished** but no PR was created.\n\n"
+                    f"Session: {job.get('session_url', 'N/A')}\n"
+                    f"Please review the session for details.",
                 )
 
-                # Notify on completion
-                parsed = parse_issue_url(job["issue_url"])
-                if parsed:
-                    repo, issue_number = parsed
-                    if pr_url:
-                        await comment_on_issue(
-                            repo,
-                            issue_number,
-                            f"✅ **Remediation complete**\n\n"
-                            f"Pull Request: {pr_url}",
-                        )
-                    else:
-                        await comment_on_issue(
-                            repo,
-                            issue_number,
-                            f"⚠️ **Remediation session finished** but no PR was created.\n\n"
-                            f"Session: {job.get('session_url', 'N/A')}\n"
-                            f"Please review the session for details.",
-                        )
+        # Slack notification
+        if job.get("slack_channel") and job.get("slack_message_ts"):
+            mention = _format_user_mention(job.get("triggered_by"))
+            if pr_url:
+                msg = f"✅ PR ready for issue #{job['issue_number']}: {pr_url}"
+                if mention:
+                    msg += f"\n{mention} please review."
+                await post_thread_reply(
+                    job["slack_channel"],
+                    job["slack_message_ts"],
+                    msg,
+                )
+            else:
+                msg = (
+                    f"⚠️ Session finished for issue #{job['issue_number']} but no PR was created. "
+                    f"Check session: {job.get('session_url', 'N/A')}"
+                )
+                if mention:
+                    msg += f"\ncc {mention}"
+                await post_thread_reply(
+                    job["slack_channel"],
+                    job["slack_message_ts"],
+                    msg,
+                )
 
-                # Slack notification
-                if job.get("slack_channel") and job.get("slack_message_ts"):
-                    mention = _format_user_mention(job.get("triggered_by"))
-                    if pr_url:
-                        await post_thread_reply(
-                            job["slack_channel"],
-                            job["slack_message_ts"],
-                            f"✅ PR ready for issue #{job['issue_number']}: {pr_url}\n"
-                            f"{mention} please review.",
-                        )
-                    else:
-                        await post_thread_reply(
-                            job["slack_channel"],
-                            job["slack_message_ts"],
-                            f"⚠️ Session finished for issue #{job['issue_number']} but no PR was created. "
-                            f"Check session: {job.get('session_url', 'N/A')}\n"
-                            f"cc {mention}",
-                        )
+    elif status == "blocked":
+        # Only notify on transition to blocked (not on every poll cycle)
+        if job["status"] != "blocked":
+            await update_job(job["id"], status="blocked", last_notified_status="blocked")
+            if job.get("slack_channel") and job.get("slack_message_ts"):
+                await post_thread_reply(
+                    job["slack_channel"],
+                    job["slack_message_ts"],
+                    f"⏸️ Session for issue #{job['issue_number']} is blocked and needs attention. "
+                    f"Session: {job.get('session_url', 'N/A')}",
+                )
 
-            elif status == "blocked":
-                # Only notify on transition to blocked (not on every poll cycle)
-                if job["status"] != "blocked":
-                    await update_job(job["id"], status="blocked", last_notified_status="blocked")
-                    if job.get("slack_channel") and job.get("slack_message_ts"):
-                        await post_thread_reply(
-                            job["slack_channel"],
-                            job["slack_message_ts"],
-                            f"⏸️ Session for issue #{job['issue_number']} is blocked and needs attention. "
-                            f"Session: {job.get('session_url', 'N/A')}",
-                        )
+    elif status in ("running", "in_progress"):
+        # Handle transition from blocked back to active
+        if job["status"] == "blocked":
+            await update_job(job["id"], status="in_progress", last_notified_status=status)
+            if job.get("slack_channel") and job.get("slack_message_ts"):
+                await post_thread_reply(
+                    job["slack_channel"],
+                    job["slack_message_ts"],
+                    f"▶️ Session for issue #{job['issue_number']} is no longer blocked and has resumed.",
+                )
+        else:
+            # Send progress update on first transition to running (not from blocked)
+            await _notify_progress(job, status, job.get("session_url"))
 
-            elif status in ("running", "in_progress"):
-                # Handle transition from blocked back to active
-                if job["status"] == "blocked":
-                    await update_job(job["id"], status="in_progress", last_notified_status=status)
-                    if job.get("slack_channel") and job.get("slack_message_ts"):
-                        await post_thread_reply(
-                            job["slack_channel"],
-                            job["slack_message_ts"],
-                            f"▶️ Session for issue #{job['issue_number']} is no longer blocked and has resumed.",
-                        )
-                else:
-                    # Send progress update on first transition to running (not from blocked)
-                    await _notify_progress(job, status, job.get("session_url"))
-
-            elif status in ("stopped", "error"):
-                await update_job(job["id"], status="failed", last_notified_status=status)
-                if job.get("slack_channel") and job.get("slack_message_ts"):
-                    await post_thread_reply(
-                        job["slack_channel"],
-                        job["slack_message_ts"],
-                        f"❌ Remediation failed for issue #{job['issue_number']}. "
-                        f"Session: {job.get('session_url', 'N/A')}\n"
-                        f"React with 🚀 again to retry.",
-                    )
-
-        except Exception:
-            logger.exception("Error polling session %s for job %d", session_id, job["id"])
+    elif status in ("stopped", "error"):
+        await update_job(job["id"], status="failed", last_notified_status=status)
+        if job.get("slack_channel") and job.get("slack_message_ts"):
+            await post_thread_reply(
+                job["slack_channel"],
+                job["slack_message_ts"],
+                f"❌ Remediation failed for issue #{job['issue_number']}. "
+                f"Session: {job.get('session_url', 'N/A')}\n"
+                f"React with 🚀 again to retry.",
+            )
 
 
 async def start_poller() -> None:

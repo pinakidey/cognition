@@ -83,7 +83,11 @@ async def test_poll_finished_with_pr(mock_jobs, mock_session, mock_comment, mock
     mock_comment.assert_called_once()
     assert "Remediation complete" in mock_comment.call_args[0][2]
     mock_slack.assert_called_once()
-    assert "PR ready" in mock_slack.call_args[0][2]
+    slack_msg = mock_slack.call_args[0][2]
+    assert "PR ready" in slack_msg
+    # No triggered_by → no dangling mention text
+    assert "please review" not in slack_msg
+    assert "cc " not in slack_msg
 
 
 @patch("app.poller.post_thread_reply", new_callable=AsyncMock)
