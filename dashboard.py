@@ -14,7 +14,7 @@ async def status():
     stats = await get_job_stats()
     jobs = await get_all_jobs()
 
-    active = [j for j in jobs if j["status"] in ("pending", "in_progress")]
+    active = [j for j in jobs if j["status"] in ("pending", "in_progress", "blocked")]
     recent_completed = [j for j in jobs if j["status"] == "completed"][:10]
 
     return {

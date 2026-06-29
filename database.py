@@ -2,12 +2,12 @@ import aiosqlite
 import os
 from datetime import datetime, timezone
 
-DB_PATH = os.environ.get("DB_PATH", "./data/jobs.db")
+from config import settings
 
 
 async def get_db() -> aiosqlite.Connection:
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    db = await aiosqlite.connect(DB_PATH)
+    os.makedirs(os.path.dirname(settings.db_path), exist_ok=True)
+    db = await aiosqlite.connect(settings.db_path)
     db.row_factory = aiosqlite.Row
     return db
 

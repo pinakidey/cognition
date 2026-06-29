@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 from database import create_job, get_job_by_issue_url, update_job
@@ -12,6 +13,9 @@ from github_client import (
 from slack_client import post_thread_reply
 
 logger = logging.getLogger(__name__)
+
+# Per-issue lock to prevent race conditions between concurrent reactions
+_issue_locks: dict[str, asyncio.Lock] = {}
 
 
 def build_fix_prompt(issue: dict, repo: str, issue_number: int) -> str:
@@ -63,9 +67,27 @@ async def trigger_remediation(
 
     repo, issue_number = parsed
 
-    # Check for duplicate active jobs
+    # Acquire per-issue lock to prevent race conditions from concurrent reactions
+    if issue_url not in _issue_locks:
+        _issue_locks[issue_url] = asyncio.Lock()
+    async with _issue_locks[issue_url]:
+        return await _do_trigger_remediation(
+            issue_url, repo, issue_number, triggered_by, slack_channel, slack_message_ts
+        )
+
+
+async def _do_trigger_remediation(
+    issue_url: str,
+    repo: str,
+    issue_number: int,
+    triggered_by: str,
+    slack_channel: str | None,
+    slack_message_ts: str | None,
+) -> dict:
+    """Inner implementation, called under per-issue lock."""
+    # Check for duplicate active jobs (includes blocked)
     existing = await get_job_by_issue_url(issue_url)
-    if existing and existing["status"] in ("pending", "in_progress"):
+    if existing and existing["status"] in ("pending", "in_progress", "blocked"):
         return {
             "ok": False,
             "error": f"Active remediation already exists for this issue (status: {existing['status']})",

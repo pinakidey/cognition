@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     slack_channel_id: str = ""
 
     # App
-    database_url: str = "sqlite+aiosqlite:///./data/jobs.db"
+    db_path: str = "./data/jobs.db"
     poll_interval_seconds: int = 30
 
     model_config = {"env_file": ".env", "extra": "ignore"}
