@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.get("/status", response_class=JSONResponse, dependencies=[Depends(verify_admin_key)])
+@router.get("/status", response_class=JSONResponse)
 async def status():
     """Observability endpoint — JSON summary of system health."""
     stats = await get_job_stats()
@@ -29,7 +29,7 @@ async def status():
     }
 
 
-@router.get("/", response_class=HTMLResponse, dependencies=[Depends(verify_admin_key)])
+@router.get("/", response_class=HTMLResponse)
 async def dashboard():
     """HTML dashboard for engineering leadership visibility."""
     stats = await get_job_stats()

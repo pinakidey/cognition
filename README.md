@@ -28,15 +28,15 @@ A daily scanner finds issues in the target repo and creates GitHub issues. These
 
 | Endpoint | URL | Auth |
 |----------|-----|------|
-| Dashboard | https://devin-remediation-service.fly.dev/ | `X-Admin-Key` |
+| Dashboard | https://devin-remediation-service.fly.dev/ | Public |
 | Health Check | https://devin-remediation-service.fly.dev/health | Public |
-| Status API | https://devin-remediation-service.fly.dev/status | `X-Admin-Key` |
+| Status API | https://devin-remediation-service.fly.dev/status | Public |
 | Slack Webhook | https://devin-remediation-service.fly.dev/webhook/slack | Slack signature |
 | Retry Job | https://devin-remediation-service.fly.dev/retry/{job_id} | `X-Admin-Key` |
 
-**Accessing protected endpoints:**
+**Retry endpoint** (protected):
 ```bash
-curl -H "X-Admin-Key: <your-admin-key>" https://devin-remediation-service.fly.dev/status
+curl -X POST -H "X-Admin-Key: <your-admin-key>" https://devin-remediation-service.fly.dev/retry/{job_id}
 ```
 
 ## Architecture
