@@ -4,10 +4,10 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
-from database import init_db
-from poller import start_poller
-from webhook import router as webhook_router
-from dashboard import router as dashboard_router
+from app.database import init_db
+from app.poller import start_poller
+from app.webhook import router as webhook_router
+from app.dashboard import router as dashboard_router
 
 logging.basicConfig(
     level=logging.INFO,

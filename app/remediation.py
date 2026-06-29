@@ -1,16 +1,16 @@
 import asyncio
 import logging
 
-from database import create_job, get_job_by_issue_url, update_job
-from devin_client import create_session
-from github_client import (
+from app.database import create_job, get_job_by_issue_url, update_job
+from app.devin_client import create_session
+from app.github_client import (
     comment_on_issue,
     get_issue,
     get_issue_linked_prs,
     is_issue_open,
     parse_issue_url,
 )
-from slack_client import post_thread_reply
+from app.slack_client import post_thread_reply
 
 logger = logging.getLogger(__name__)
 

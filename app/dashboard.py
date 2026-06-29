@@ -3,7 +3,7 @@ from html import escape
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from database import get_all_jobs, get_job_stats
+from app.database import get_all_jobs, get_job_stats
 
 router = APIRouter()
 

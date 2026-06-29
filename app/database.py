@@ -2,7 +2,7 @@ import aiosqlite
 import os
 from datetime import datetime, timezone
 
-from config import settings
+from app.config import settings
 
 
 async def get_db() -> aiosqlite.Connection:
