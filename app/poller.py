@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import re
 
 from app.config import settings
 from app.database import get_active_jobs, update_job
@@ -9,6 +8,12 @@ from app.github_client import comment_on_issue, parse_issue_url
 from app.slack_client import post_thread_reply
 
 logger = logging.getLogger(__name__)
+
+# Maps Devin session status to user-friendly progress messages
+PROGRESS_MESSAGES: dict[str, str] = {
+    "running": "🔧 Devin is actively working on the fix...",
+    "in_progress": "🔧 Devin is actively working on the fix...",
+}
 
 
 def extract_pr_url(session_data: dict) -> str | None:
@@ -30,6 +35,35 @@ def extract_pr_url(session_data: dict) -> str | None:
     return None
 
 
+async def _notify_progress(job: dict, status: str, session_url: str | None) -> None:
+    """Send a progress update to Slack if status changed since last notification."""
+    last_notified = job.get("last_notified_status")
+
+    # Only notify on status transitions we haven't already reported
+    if status == last_notified:
+        return
+
+    message = PROGRESS_MESSAGES.get(status)
+    if not message:
+        return
+
+    channel = job.get("slack_channel")
+    message_ts = job.get("slack_message_ts")
+    if not channel or not message_ts:
+        return
+
+    issue_number = job["issue_number"]
+    full_message = f"{message}\nIssue #{issue_number}"
+    if session_url:
+        full_message += f" | Session: {session_url}"
+
+    try:
+        await post_thread_reply(channel, message_ts, full_message)
+        await update_job(job["id"], last_notified_status=status)
+    except Exception:
+        logger.exception("Failed to send progress notification for job %d", job["id"])
+
+
 async def poll_active_jobs() -> None:
     """Poll all active Devin sessions and update job status."""
     jobs = await get_active_jobs()
@@ -49,6 +83,7 @@ async def poll_active_jobs() -> None:
                     job["id"],
                     status="completed" if pr_url else "finished_no_pr",
                     pr_url=pr_url,
+                    last_notified_status="finished",
                 )
 
                 # Notify on completion
@@ -90,7 +125,7 @@ async def poll_active_jobs() -> None:
             elif status == "blocked":
                 # Only notify on transition to blocked (not on every poll cycle)
                 if job["status"] != "blocked":
-                    await update_job(job["id"], status="blocked")
+                    await update_job(job["id"], status="blocked", last_notified_status="blocked")
                     if job.get("slack_channel") and job.get("slack_message_ts"):
                         await post_thread_reply(
                             job["slack_channel"],
@@ -100,12 +135,21 @@ async def poll_active_jobs() -> None:
                         )
 
             elif status in ("running", "in_progress"):
+                # Send progress update on first transition to running
+                await _notify_progress(job, status, job.get("session_url"))
+
                 # Handle transition from blocked back to active
                 if job["status"] == "blocked":
-                    await update_job(job["id"], status="in_progress")
+                    await update_job(job["id"], status="in_progress", last_notified_status=status)
+                    if job.get("slack_channel") and job.get("slack_message_ts"):
+                        await post_thread_reply(
+                            job["slack_channel"],
+                            job["slack_message_ts"],
+                            f"▶️ Session for issue #{job['issue_number']} is no longer blocked and has resumed.",
+                        )
 
             elif status in ("stopped", "error"):
-                await update_job(job["id"], status="failed")
+                await update_job(job["id"], status="failed", last_notified_status=status)
                 if job.get("slack_channel") and job.get("slack_message_ts"):
                     await post_thread_reply(
                         job["slack_channel"],

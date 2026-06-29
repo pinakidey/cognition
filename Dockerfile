@@ -30,12 +30,12 @@ RUN mkdir -p /data && chown appuser:appuser /data
 # Switch to non-root user
 USER appuser
 
-# All configuration via environment variables — no defaults baked in.
+# All configuration via environment variables.
 # Required at runtime:
 #   DEVIN_API_KEY, GH_TOKEN, SLACK_BOT_TOKEN, SLACK_SIGNING_SECRET, SLACK_CHANNEL_ID
-# Optional (with sane defaults in app/config.py):
-#   DB_PATH (default: ./data/jobs.db)
+# Optional:
 #   DEVIN_API_BASE, DEVIN_MAX_ACU, GITHUB_REPO, POLL_INTERVAL_SECONDS
+ENV DB_PATH=/data/jobs.db
 
 # Expose port (configurable via PORT env var)
 ENV PORT=8080

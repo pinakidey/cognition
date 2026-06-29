@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from app.poller import extract_pr_url, poll_active_jobs
+from app.poller import _notify_progress, extract_pr_url, poll_active_jobs
 
 
 # --- extract_pr_url tests ---
@@ -126,6 +126,7 @@ async def test_poll_blocked_transition(mock_jobs, mock_session, mock_update, moc
         "issue_url": "https://github.com/owner/repo/issues/3",
         "issue_number": 3,
         "status": "in_progress",
+        "last_notified_status": "running",
         "session_url": "https://app.devin.ai/sessions/sess-3",
         "slack_channel": "C0TEST",
         "slack_message_ts": "3456.7890",
@@ -135,7 +136,7 @@ async def test_poll_blocked_transition(mock_jobs, mock_session, mock_update, moc
 
     await poll_active_jobs()
 
-    mock_update.assert_called_once_with(3, status="blocked")
+    mock_update.assert_called_once_with(3, status="blocked", last_notified_status="blocked")
     mock_slack.assert_called_once()
     assert "blocked" in mock_slack.call_args[0][2]
 
@@ -151,6 +152,7 @@ async def test_poll_unblocked_transition(mock_jobs, mock_session, mock_update):
         "issue_url": "https://github.com/owner/repo/issues/4",
         "issue_number": 4,
         "status": "blocked",
+        "last_notified_status": "blocked",
         "session_url": "https://app.devin.ai/sessions/sess-4",
         "slack_channel": None,
         "slack_message_ts": None,
@@ -159,7 +161,7 @@ async def test_poll_unblocked_transition(mock_jobs, mock_session, mock_update):
 
     await poll_active_jobs()
 
-    mock_update.assert_called_once_with(4, status="in_progress")
+    mock_update.assert_called_once_with(4, status="in_progress", last_notified_status="running")
 
 
 @patch("app.poller.post_thread_reply", new_callable=AsyncMock)
@@ -174,6 +176,7 @@ async def test_poll_error_status(mock_jobs, mock_session, mock_update, mock_slac
         "issue_url": "https://github.com/owner/repo/issues/5",
         "issue_number": 5,
         "status": "in_progress",
+        "last_notified_status": "running",
         "session_url": "https://app.devin.ai/sessions/sess-5",
         "slack_channel": "C0TEST",
         "slack_message_ts": "5678.1234",
@@ -183,7 +186,7 @@ async def test_poll_error_status(mock_jobs, mock_session, mock_update, mock_slac
 
     await poll_active_jobs()
 
-    mock_update.assert_called_once_with(5, status="failed")
+    mock_update.assert_called_once_with(5, status="failed", last_notified_status="error")
     mock_slack.assert_called_once()
     assert "failed" in mock_slack.call_args[0][2]
 
@@ -220,3 +223,86 @@ async def test_poll_handles_api_error_gracefully(mock_jobs, mock_session):
 
     # Should not raise
     await poll_active_jobs()
+
+
+# --- _notify_progress tests ---
+
+@patch("app.poller.update_job", new_callable=AsyncMock)
+@patch("app.poller.post_thread_reply", new_callable=AsyncMock)
+async def test_notify_progress_sends_on_new_status(mock_slack, mock_update):
+    """Sends progress message when status differs from last_notified_status."""
+    job = {
+        "id": 10,
+        "issue_number": 42,
+        "last_notified_status": "started",
+        "slack_channel": "C0TEST",
+        "slack_message_ts": "9999.0000",
+    }
+    mock_slack.return_value = True
+
+    await _notify_progress(job, "running", "https://app.devin.ai/sessions/s1")
+
+    mock_slack.assert_called_once()
+    assert "actively working" in mock_slack.call_args[0][2]
+    mock_update.assert_called_once_with(10, last_notified_status="running")
+
+
+@patch("app.poller.update_job", new_callable=AsyncMock)
+@patch("app.poller.post_thread_reply", new_callable=AsyncMock)
+async def test_notify_progress_skips_if_already_notified(mock_slack, mock_update):
+    """Does not re-send if status matches last_notified_status."""
+    job = {
+        "id": 11,
+        "issue_number": 43,
+        "last_notified_status": "running",
+        "slack_channel": "C0TEST",
+        "slack_message_ts": "9999.1111",
+    }
+
+    await _notify_progress(job, "running", "https://app.devin.ai/sessions/s2")
+
+    mock_slack.assert_not_called()
+    mock_update.assert_not_called()
+
+
+@patch("app.poller.update_job", new_callable=AsyncMock)
+@patch("app.poller.post_thread_reply", new_callable=AsyncMock)
+async def test_notify_progress_skips_without_slack_info(mock_slack, mock_update):
+    """Does not attempt notification without Slack channel/ts."""
+    job = {
+        "id": 12,
+        "issue_number": 44,
+        "last_notified_status": None,
+        "slack_channel": None,
+        "slack_message_ts": None,
+    }
+
+    await _notify_progress(job, "running", "https://app.devin.ai/sessions/s3")
+
+    mock_slack.assert_not_called()
+
+
+@patch("app.poller.post_thread_reply", new_callable=AsyncMock)
+@patch("app.poller.update_job", new_callable=AsyncMock)
+@patch("app.poller.get_session", new_callable=AsyncMock)
+@patch("app.poller.get_active_jobs", new_callable=AsyncMock)
+async def test_poll_running_sends_progress(mock_jobs, mock_session, mock_update, mock_slack):
+    """Running session sends progress update on first detection."""
+    mock_jobs.return_value = [{
+        "id": 13,
+        "session_id": "sess-13",
+        "issue_url": "https://github.com/owner/repo/issues/13",
+        "issue_number": 13,
+        "status": "in_progress",
+        "last_notified_status": "started",
+        "session_url": "https://app.devin.ai/sessions/sess-13",
+        "slack_channel": "C0TEST",
+        "slack_message_ts": "1111.2222",
+    }]
+    mock_session.return_value = {"status_enum": "running"}
+    mock_slack.return_value = True
+
+    await poll_active_jobs()
+
+    mock_slack.assert_called_once()
+    assert "actively working" in mock_slack.call_args[0][2]

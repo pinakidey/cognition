@@ -27,6 +27,7 @@ async def init_db() -> None:
                 session_url TEXT,
                 pr_url TEXT,
                 status TEXT NOT NULL DEFAULT 'pending',
+                last_notified_status TEXT,
                 triggered_by TEXT,
                 slack_message_ts TEXT,
                 slack_channel TEXT,
@@ -34,6 +35,14 @@ async def init_db() -> None:
                 updated_at TEXT NOT NULL
             )
         """)
+        # Migration: add last_notified_status if missing (existing DBs)
+        try:
+            await db.execute(
+                "ALTER TABLE remediation_jobs ADD COLUMN last_notified_status TEXT"
+            )
+            await db.commit()
+        except Exception:
+            pass  # Column already exists
         await db.commit()
     finally:
         await db.close()
@@ -65,7 +74,7 @@ async def create_job(
 
 
 ALLOWED_COLUMNS = frozenset({
-    "session_id", "session_url", "pr_url", "status",
+    "session_id", "session_url", "pr_url", "status", "last_notified_status",
     "triggered_by", "slack_message_ts", "slack_channel", "updated_at",
 })
 

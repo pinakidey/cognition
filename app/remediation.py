@@ -137,6 +137,7 @@ async def _do_trigger_remediation(
             session_id=session_id,
             session_url=session_url,
             status="in_progress",
+            last_notified_status="started",
         )
 
         # Comment on the GitHub issue
