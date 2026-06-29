@@ -6,7 +6,9 @@ from config import settings
 
 
 async def get_db() -> aiosqlite.Connection:
-    os.makedirs(os.path.dirname(settings.db_path), exist_ok=True)
+    db_dir = os.path.dirname(settings.db_path)
+    if db_dir:
+        os.makedirs(db_dir, exist_ok=True)
     db = await aiosqlite.connect(settings.db_path)
     db.row_factory = aiosqlite.Row
     return db

@@ -99,6 +99,11 @@ async def poll_active_jobs() -> None:
                             f"Session: {job.get('session_url', 'N/A')}",
                         )
 
+            elif status in ("running", "in_progress"):
+                # Handle transition from blocked back to active
+                if job["status"] == "blocked":
+                    await update_job(job["id"], status="in_progress")
+
             elif status in ("stopped", "error"):
                 await update_job(job["id"], status="failed")
                 if job.get("slack_channel") and job.get("slack_message_ts"):
