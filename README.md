@@ -205,7 +205,9 @@ GitHub Actions automatically syncs secrets and deploys on push to `main`:
 
 ## Observability
 
-The dashboard at `/` provides:
+### Dashboard (`/`)
+
+The HTML dashboard provides at-a-glance metrics:
 - **Total Jobs**: Number of remediation requests processed
 - **In Progress**: Currently active Devin sessions
 - **Completed**: Successfully resolved with PR
@@ -213,7 +215,22 @@ The dashboard at `/` provides:
 - **Success Rate**: Completed / Total ratio
 - **Failed**: Sessions that errored out
 
-The `/status` JSON endpoint is suitable for monitoring/alerting integrations.
+The `/status` JSON endpoint returns the same data in machine-readable format, suitable for monitoring/alerting integrations.
+
+### Slack Thread Progress Notifications
+
+Each remediation session posts intermittent progress updates in the original Slack thread:
+
+```
+🚀 Remediation started for issue #7          ← reaction triggers session
+🔧 Devin is actively working on the fix...   ← session begins executing
+⏸️ Session is blocked and needs attention     ← session hits a blocker
+▶️ Session has resumed                        ← blocker resolved
+✅ PR ready for issue #7: <PR url>           ← fix complete
+❌ Remediation failed for issue #7            ← session errored
+```
+
+Each status transition is reported exactly once (deduplication via `last_notified_status` tracking). Engineers get real-time visibility without leaving Slack.
 
 ## Docker Image Details
 
