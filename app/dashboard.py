@@ -1,9 +1,12 @@
+import logging
 from html import escape
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from app.database import get_all_jobs, get_job_stats
+from app.database import get_all_jobs, get_job_by_id, get_job_stats, update_job
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -47,6 +50,7 @@ async def dashboard():
             "failed": "❌",
             "blocked": "⏸️",
             "finished_no_pr": "⚠️",
+            "timed_out": "⏰",
         }.get(job["status"], "❓")
 
         pr_url = escape(job["pr_url"]) if job.get("pr_url") else ""
@@ -143,3 +147,30 @@ async def dashboard():
 </html>"""
 
     return HTMLResponse(content=html)
+
+
+@router.post("/retry/{job_id}", response_class=JSONResponse)
+async def retry_job(job_id: int):
+    """Manually retry a failed or timed-out remediation job."""
+    from app.remediation import trigger_remediation
+
+    job = await get_job_by_id(job_id)
+    if not job:
+        return JSONResponse(status_code=404, content={"error": "Job not found"})
+
+    retryable_statuses = ("failed", "timed_out", "finished_no_pr")
+    if job["status"] not in retryable_statuses:
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": f"Job is in '{job['status']}' state — only {', '.join(retryable_statuses)} jobs can be retried"
+            },
+        )
+
+    result = await trigger_remediation(
+        issue_url=job["issue_url"],
+        triggered_by=f"retry(job_id={job_id})",
+        slack_channel=job.get("slack_channel"),
+        slack_message_ts=job.get("slack_message_ts"),
+    )
+    return JSONResponse(content=result)

@@ -1,0 +1,29 @@
+services:
+  app:
+    build: .
+    ports:
+      - "${PORT:-8080}:${PORT:-8080}"
+    environment:
+      - PORT=${PORT:-8080}
+      - DEVIN_API_KEY=${DEVIN_API_KEY}
+      - DEVIN_API_BASE=${DEVIN_API_BASE:-https://api.devin.ai/v1}
+      - DEVIN_MAX_ACU=${DEVIN_MAX_ACU:-10}
+      - GH_TOKEN=${GH_TOKEN}
+      - GITHUB_REPO=${GITHUB_REPO:-pinakidey/superset}
+      - SLACK_BOT_TOKEN=${SLACK_BOT_TOKEN}
+      - SLACK_SIGNING_SECRET=${SLACK_SIGNING_SECRET}
+      - SLACK_CHANNEL_ID=${SLACK_CHANNEL_ID}
+      - DB_PATH=/data/jobs.db
+      - POLL_INTERVAL_SECONDS=${POLL_INTERVAL_SECONDS:-30}
+    volumes:
+      - app-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${PORT:-8080}/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  app-data:

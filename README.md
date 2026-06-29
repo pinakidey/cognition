@@ -113,25 +113,63 @@ All configuration is via environment variables (managed as deployment/repo secre
 
 ## Local Development
 
+### With Docker Compose (recommended)
+
 ```bash
-# Install dependencies
+# Create a .env file with your secrets
+cat > .env <<EOF
+DEVIN_API_KEY=your_key
+GH_TOKEN=your_token
+SLACK_BOT_TOKEN=xoxb-...
+SLACK_SIGNING_SECRET=...
+SLACK_CHANNEL_ID=C0BE0NKLY3E
+EOF
+
+# Start the service
+docker compose up -d
+
+# View logs
+docker compose logs -f
+
+# Stop
+docker compose down
+```
+
+### With Docker directly
+
+```bash
+docker build -t devin-remediation-service .
+
+docker run --rm -p 8080:8080 \
+  -e DEVIN_API_KEY=... \
+  -e GH_TOKEN=... \
+  -e SLACK_BOT_TOKEN=... \
+  -e SLACK_SIGNING_SECRET=... \
+  -e SLACK_CHANNEL_ID=... \
+  -v remediation-data:/data \
+  devin-remediation-service
+```
+
+### Without Docker
+
+```bash
 pip install -r requirements-dev.txt
 
-# Set environment variables
 export DEVIN_API_KEY=your_key
 export GH_TOKEN=your_token
 export SLACK_BOT_TOKEN=xoxb-...
 export SLACK_SIGNING_SECRET=...
 export SLACK_CHANNEL_ID=C0BE0NKLY3E
 
-# Run the service
 uvicorn app.main:app --reload --port 8000
+```
 
-# Run tests
+### Running Tests
+
+```bash
+pip install -r requirements-dev.txt
 pytest
-
-# Run tests with coverage
-pytest --cov=app --cov-report=term-missing
+pytest --cov=app --cov-report=term-missing  # with coverage
 ```
 
 ## Deployment
@@ -167,7 +205,9 @@ GitHub Actions automatically syncs secrets and deploys on push to `main`:
 
 ## Observability
 
-The dashboard at `/` provides:
+### Dashboard (`/`)
+
+The HTML dashboard provides at-a-glance metrics:
 - **Total Jobs**: Number of remediation requests processed
 - **In Progress**: Currently active Devin sessions
 - **Completed**: Successfully resolved with PR
@@ -175,16 +215,59 @@ The dashboard at `/` provides:
 - **Success Rate**: Completed / Total ratio
 - **Failed**: Sessions that errored out
 
-The `/status` JSON endpoint is suitable for monitoring/alerting integrations.
+The `/status` JSON endpoint returns the same data in machine-readable format, suitable for monitoring/alerting integrations.
 
-## Testing
+### Slack Thread Progress Notifications
 
-82 tests with 96% line coverage:
+Each remediation session posts intermittent progress updates in the original Slack thread:
 
-```bash
-pytest                                     # Run all tests
-pytest --cov=app --cov-report=term-missing # With coverage report
-pytest tests/test_webhook.py -v            # Single module
+```
+🚀 Remediation started for issue #7          ← reaction triggers session
+🔧 Devin is actively working on the fix...   ← session begins executing
+⏸️ Session is blocked and needs attention     ← session hits a blocker
+▶️ Session has resumed                        ← blocker resolved
+✅ PR ready for issue #7: <PR url>           ← fix complete
+❌ Remediation failed for issue #7            ← session errored
 ```
 
-Test stack: pytest + pytest-asyncio + respx (HTTP mocking) + in-memory SQLite per test.
+Each status transition is reported exactly once (deduplication via `last_notified_status` tracking). Engineers get real-time visibility without leaving Slack.
+
+When a PR is ready, the notification @-mentions the engineer who reacted with 🚀 to start the remediation, so they get a direct ping to review.
+
+### Failsafes & Retries
+
+| Mechanism | Behavior | Configuration |
+|-----------|----------|---------------|
+| **Devin API retry** | Exponential backoff on session creation (5s → 10s → 20s) | `MAX_RETRY_ATTEMPTS` (default: 3), `RETRY_BASE_DELAY_SECONDS` (default: 5) |
+| **Stale job timeout** | Jobs exceeding threshold are marked `timed_out` with Slack notification | `JOB_TIMEOUT_MINUTES` (default: 60) |
+| **Manual retry endpoint** | `POST /retry/{job_id}` re-triggers failed/timed-out jobs | Only accepts `failed`, `timed_out`, `finished_no_pr` statuses |
+| **Slack retry hints** | Failure/timeout messages include "React with 🚀 again to retry" | Automatic on failure |
+
+**Retry flow:**
+```
+Devin API call fails → backoff 5s → retry → backoff 10s → retry → raise error
+                                                                       ↓
+                                                            Job marked "failed"
+                                                                       ↓
+                                                 Slack: "❌ Failed. React 🚀 to retry"
+                                                                       ↓
+                                              Engineer reacts → new session created
+```
+
+**Stale job detection:**
+```
+Job created → 60 min elapsed with no completion
+                       ↓
+            Poller marks job "timed_out"
+                       ↓
+         Slack: "⏰ Timed out. React 🚀 to retry"
+```
+
+## Docker Image Details
+
+- **Base**: `python:3.12-slim` (multi-stage build)
+- **User**: Runs as non-root `appuser` (uid 1000)
+- **Health check**: Built-in `HEALTHCHECK` hitting `/health`
+- **Port**: Configurable via `PORT` env var (default: 8080)
+- **Data**: Mount a volume at `/data` for persistent SQLite storage
+- **Env-agnostic**: No platform-specific config baked into the image — works on Fly.io, AWS ECS, GCP Cloud Run, Railway, or any Docker host

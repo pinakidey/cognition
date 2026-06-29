@@ -4,7 +4,7 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
-from app.database import init_db
+from app.database import close_db, init_db
 from app.poller import start_poller
 from app.webhook import router as webhook_router
 from app.dashboard import router as dashboard_router
@@ -33,6 +33,7 @@ async def lifespan(app: FastAPI):
         await poller_task
     except asyncio.CancelledError:
         pass
+    await close_db()
     logger.info("Shutting down Devin Remediation Service")
 
 
