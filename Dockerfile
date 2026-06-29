@@ -23,12 +23,11 @@ WORKDIR /home/appuser/service
 
 # Copy application code
 COPY app/ ./app/
+COPY entrypoint.sh ./entrypoint.sh
+RUN chmod +x ./entrypoint.sh
 
-# Create default data directory (can be overridden via volume mount)
+# Create default data directory
 RUN mkdir -p /data && chown appuser:appuser /data
-
-# Switch to non-root user
-USER appuser
 
 # All configuration via environment variables.
 # Required at runtime:
@@ -44,4 +43,5 @@ EXPOSE ${PORT}
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:${PORT}/health || exit 1
 
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT}"]
+# Start as root to fix volume permissions, then drop to appuser
+ENTRYPOINT ["./entrypoint.sh"]
