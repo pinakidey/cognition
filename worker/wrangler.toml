@@ -1,0 +1,15 @@
+name = "devin-remediation-service"
+main = "src/index.ts"
+compatibility_date = "2024-06-01"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "remediation-db"
+database_id = "placeholder-will-be-set-on-deploy"
+
+[triggers]
+crons = ["*/1 * * * *"]
+
+[vars]
+GITHUB_REPO = "pinakidey/superset"
