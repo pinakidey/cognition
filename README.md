@@ -2,6 +2,12 @@
 
 Event-driven issue remediation service that uses the [Devin API](https://docs.devin.ai/api-reference/overview) to automatically fix GitHub issues triggered by human approval in Slack.
 
+## How It All Comes Together
+
+![Workflow](doc/workflow-illustration.png)
+
+A daily scanner finds issues in the target repo and creates GitHub issues. These flow into the `#devin-report` Slack channel where engineers review them. When an engineer reacts with 🚀, the remediation service picks it up, spins up a Devin AI session to implement the fix, and delivers a ready-to-review PR — all within minutes, with full observability via the dashboard and Slack thread updates.
+
 ## Tech Stack
 
 | Layer | Technology | Purpose |
