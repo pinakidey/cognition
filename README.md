@@ -10,6 +10,9 @@ Event-driven issue remediation service that uses the [Devin API](https://docs.de
 | Server | **Uvicorn** | ASGI server with hot reload |
 | Database | **SQLite** (aiosqlite, WAL mode) | Persistent job tracking with connection pooling |
 | HTTP Client | **httpx** | Async HTTP for Devin, GitHub, and Slack APIs |
+| Messaging | **Slack** (Events API + Bot) | HITL trigger (🚀 reaction), progress notifications, thread replies |
+| AI Engine | **Devin API** | Creates and monitors automated fix sessions |
+| VCS | **GitHub API** | Issue validation, PR detection, issue comments |
 | Config | **Pydantic Settings** | Type-safe env var management |
 | Deployment | **Fly.io** (Docker) | Single-region container with persistent volume |
 | CI/CD | **GitHub Actions** | Auto-deploy + secret sync on push to main |
