@@ -1,0 +1,47 @@
+# Version control
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.coverage
+htmlcov/
+*.egg-info/
+.eggs/
+
+# Virtual environments
+.venv
+venv
+env
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Tests (not needed in production image)
+tests/
+pytest.ini
+requirements-dev.txt
+
+# CI/CD
+.github/
+
+# Fly.io config (deployment-specific)
+fly.toml
+
+# Local data
+data/
+*.db
+
+# Docs
+*.md
+!app/**/*.md
+
+# Environment files (secrets should never be in the image)
+.env
+.env.*

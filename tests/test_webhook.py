@@ -1,4 +1,4 @@
-"""Tests for webhook.py — signature verification, event routing, URL extraction."""
+"""Tests for webhook.py — signature verification, event routing, URL extraction, idempotency."""
 import hashlib
 import hmac
 import json
@@ -8,7 +8,12 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from app.webhook import extract_github_issue_url, verify_slack_signature
+from app.webhook import (
+    _is_duplicate_reaction,
+    _processed_reactions,
+    extract_github_issue_url,
+    verify_slack_signature,
+)
 
 
 def _make_signature(body: bytes, secret: str = "test-signing-secret", ts: str | None = None) -> tuple[str, str]:
@@ -204,3 +209,34 @@ def test_webhook_reaction_event_returns_200(client, monkeypatch):
         },
     )
     assert response.status_code == 200
+
+
+# --- Idempotency tests ---
+
+
+def test_idempotency_first_call_not_duplicate():
+    """First reaction from a user is not a duplicate."""
+    _processed_reactions.clear()
+    assert _is_duplicate_reaction("C123", "1234.5678", "U001") is False
+
+
+def test_idempotency_second_call_is_duplicate():
+    """Same reaction event processed again within TTL is a duplicate."""
+    _processed_reactions.clear()
+    _is_duplicate_reaction("C123", "1234.5678", "U002")
+    assert _is_duplicate_reaction("C123", "1234.5678", "U002") is True
+
+
+def test_idempotency_different_user_not_duplicate():
+    """Same message but different user is not a duplicate."""
+    _processed_reactions.clear()
+    _is_duplicate_reaction("C123", "1234.5678", "U003")
+    assert _is_duplicate_reaction("C123", "1234.5678", "U004") is False
+
+
+def test_idempotency_expired_entry_allows_reprocessing():
+    """Expired entries allow reprocessing."""
+    _processed_reactions.clear()
+    # Manually insert an expired entry
+    _processed_reactions["C123:9999.0000:U005"] = time.time() - 600  # 10 min ago
+    assert _is_duplicate_reaction("C123", "9999.0000", "U005") is False

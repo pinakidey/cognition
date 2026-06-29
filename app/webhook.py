@@ -5,6 +5,7 @@ import json
 import logging
 import re
 import time
+from collections import OrderedDict
 
 from fastapi import APIRouter, Request, Response
 
@@ -16,6 +17,35 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 ROCKET_EMOJI = "rocket"
+
+# Idempotency cache: tracks processed (channel, message_ts, user) tuples
+# to prevent duplicate processing from Slack retries. LRU with max 10k entries.
+_processed_reactions: OrderedDict[str, float] = OrderedDict()
+_IDEMPOTENCY_MAX_SIZE = 10000
+_IDEMPOTENCY_TTL_SECONDS = 300  # 5 minutes
+
+
+def _is_duplicate_reaction(channel: str, message_ts: str, user: str) -> bool:
+    """Check if this reaction was already processed (idempotency guard)."""
+    key = f"{channel}:{message_ts}:{user}"
+    now = time.time()
+
+    # Evict expired entries periodically
+    if len(_processed_reactions) > _IDEMPOTENCY_MAX_SIZE:
+        # Remove oldest 20% to avoid evicting on every call
+        to_remove = _IDEMPOTENCY_MAX_SIZE // 5
+        for _ in range(to_remove):
+            _processed_reactions.popitem(last=False)
+
+    if key in _processed_reactions:
+        # Still within TTL?
+        if now - _processed_reactions[key] < _IDEMPOTENCY_TTL_SECONDS:
+            return True
+        # Expired — allow reprocessing
+        del _processed_reactions[key]
+
+    _processed_reactions[key] = now
+    return False
 
 
 def verify_slack_signature(
@@ -128,6 +158,11 @@ async def handle_reaction_added(event: dict) -> None:
 
         if not channel or not message_ts:
             logger.warning("reaction_added event missing channel or ts")
+            return
+
+        # Idempotency check — prevent duplicate processing from Slack retries
+        if _is_duplicate_reaction(channel, message_ts, user):
+            logger.info("Duplicate reaction event (already processed): %s/%s/%s", channel, message_ts, user)
             return
 
         # Reject if no channel is configured (fail closed)

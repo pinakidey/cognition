@@ -1,3 +1,4 @@
+import logging
 from html import escape
 
 from fastapi import APIRouter, Depends, Request
@@ -5,6 +6,8 @@ from fastapi.responses import HTMLResponse, JSONResponse
 
 from app.database import get_all_jobs, get_job_by_id, get_job_stats, update_job
 from app.security import verify_admin_key
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -46,8 +49,9 @@ async def dashboard():
             "in_progress": "🔄",
             "completed": "✅",
             "failed": "❌",
-            "blocked": "⏸️",
-            "finished_no_pr": "⚠️",
+            "blocked": "⏸",
+            "finished_no_pr": "⚠",
+            "timed_out": "⏰",
         }.get(job["status"], "❓")
 
         pr_url = escape(job["pr_url"]) if job.get("pr_url") else ""
