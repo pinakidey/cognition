@@ -1,17 +1,18 @@
 import logging
 from html import escape
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from app.database import get_all_jobs, get_job_by_id, get_job_stats, update_job
+from app.security import verify_admin_key
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 
-@router.get("/status", response_class=JSONResponse)
+@router.get("/status", response_class=JSONResponse, dependencies=[Depends(verify_admin_key)])
 async def status():
     """Observability endpoint — JSON summary of system health."""
     stats = await get_job_stats()
@@ -28,7 +29,7 @@ async def status():
     }
 
 
-@router.get("/", response_class=HTMLResponse)
+@router.get("/", response_class=HTMLResponse, dependencies=[Depends(verify_admin_key)])
 async def dashboard():
     """HTML dashboard for engineering leadership visibility."""
     stats = await get_job_stats()
@@ -48,8 +49,8 @@ async def dashboard():
             "in_progress": "🔄",
             "completed": "✅",
             "failed": "❌",
-            "blocked": "⏸️",
-            "finished_no_pr": "⚠️",
+            "blocked": "⏸",
+            "finished_no_pr": "⚠",
             "timed_out": "⏰",
         }.get(job["status"], "❓")
 
@@ -149,7 +150,7 @@ async def dashboard():
     return HTMLResponse(content=html)
 
 
-@router.post("/retry/{job_id}", response_class=JSONResponse)
+@router.post("/retry/{job_id}", response_class=JSONResponse, dependencies=[Depends(verify_admin_key)])
 async def retry_job(job_id: int):
     """Manually retry a failed or timed-out remediation job."""
     from app.remediation import trigger_remediation

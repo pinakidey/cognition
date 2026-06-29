@@ -22,6 +22,7 @@ jobs:
             SLACK_BOT_TOKEN="${SLACK_BOT_TOKEN}" \
             SLACK_SIGNING_SECRET="${SLACK_SIGNING_SECRET}" \
             SLACK_CHANNEL_ID="${SLACK_CHANNEL_ID}" \
+            ADMIN_API_KEY="${ADMIN_API_KEY}" \
             --app devin-remediation-service --stage
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_TOKEN }}
@@ -30,6 +31,7 @@ jobs:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_SIGNING_SECRET: ${{ secrets.SLACK_SIGNING_SECRET }}
           SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
+          ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
 
       - name: Deploy to Fly.io
         run: flyctl deploy --remote-only --yes
