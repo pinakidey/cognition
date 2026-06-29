@@ -26,12 +26,18 @@ A daily scanner finds issues in the target repo and creates GitHub issues. These
 
 ## Live Deployment
 
-| Endpoint | URL |
-|----------|-----|
-| Dashboard | https://devin-remediation-service.fly.dev/ |
-| Health Check | https://devin-remediation-service.fly.dev/health |
-| Status API | https://devin-remediation-service.fly.dev/status |
-| Slack Webhook | https://devin-remediation-service.fly.dev/webhook/slack |
+| Endpoint | URL | Auth |
+|----------|-----|------|
+| Dashboard | https://devin-remediation-service.fly.dev/ | `X-Admin-Key` |
+| Health Check | https://devin-remediation-service.fly.dev/health | Public |
+| Status API | https://devin-remediation-service.fly.dev/status | `X-Admin-Key` |
+| Slack Webhook | https://devin-remediation-service.fly.dev/webhook/slack | Slack signature |
+| Retry Job | https://devin-remediation-service.fly.dev/retry/{job_id} | `X-Admin-Key` |
+
+**Accessing protected endpoints:**
+```bash
+curl -H "X-Admin-Key: <your-admin-key>" https://devin-remediation-service.fly.dev/status
+```
 
 ## Architecture
 
