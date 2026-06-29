@@ -113,25 +113,63 @@ All configuration is via environment variables (managed as deployment/repo secre
 
 ## Local Development
 
+### With Docker Compose (recommended)
+
 ```bash
-# Install dependencies
+# Create a .env file with your secrets
+cat > .env <<EOF
+DEVIN_API_KEY=your_key
+GH_TOKEN=your_token
+SLACK_BOT_TOKEN=xoxb-...
+SLACK_SIGNING_SECRET=...
+SLACK_CHANNEL_ID=C0BE0NKLY3E
+EOF
+
+# Start the service
+docker compose up -d
+
+# View logs
+docker compose logs -f
+
+# Stop
+docker compose down
+```
+
+### With Docker directly
+
+```bash
+docker build -t devin-remediation-service .
+
+docker run --rm -p 8080:8080 \
+  -e DEVIN_API_KEY=... \
+  -e GH_TOKEN=... \
+  -e SLACK_BOT_TOKEN=... \
+  -e SLACK_SIGNING_SECRET=... \
+  -e SLACK_CHANNEL_ID=... \
+  -v remediation-data:/data \
+  devin-remediation-service
+```
+
+### Without Docker
+
+```bash
 pip install -r requirements-dev.txt
 
-# Set environment variables
 export DEVIN_API_KEY=your_key
 export GH_TOKEN=your_token
 export SLACK_BOT_TOKEN=xoxb-...
 export SLACK_SIGNING_SECRET=...
 export SLACK_CHANNEL_ID=C0BE0NKLY3E
 
-# Run the service
 uvicorn app.main:app --reload --port 8000
+```
 
-# Run tests
+### Running Tests
+
+```bash
+pip install -r requirements-dev.txt
 pytest
-
-# Run tests with coverage
-pytest --cov=app --cov-report=term-missing
+pytest --cov=app --cov-report=term-missing  # with coverage
 ```
 
 ## Deployment
@@ -177,14 +215,11 @@ The dashboard at `/` provides:
 
 The `/status` JSON endpoint is suitable for monitoring/alerting integrations.
 
-## Testing
+## Docker Image Details
 
-82 tests with 96% line coverage:
-
-```bash
-pytest                                     # Run all tests
-pytest --cov=app --cov-report=term-missing # With coverage report
-pytest tests/test_webhook.py -v            # Single module
-```
-
-Test stack: pytest + pytest-asyncio + respx (HTTP mocking) + in-memory SQLite per test.
+- **Base**: `python:3.12-slim` (multi-stage build)
+- **User**: Runs as non-root `appuser` (uid 1000)
+- **Health check**: Built-in `HEALTHCHECK` hitting `/health`
+- **Port**: Configurable via `PORT` env var (default: 8080)
+- **Data**: Mount a volume at `/data` for persistent SQLite storage
+- **Env-agnostic**: No platform-specific config baked into the image — works on Fly.io, AWS ECS, GCP Cloud Run, Railway, or any Docker host
