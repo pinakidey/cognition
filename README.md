@@ -52,8 +52,10 @@ cognition/
 │   ├── devin_client.py           # Devin API client
 │   ├── github_client.py          # GitHub API client
 │   ├── slack_client.py           # Slack API client
-│   └── dashboard.py              # HTML dashboard + JSON status API
-├── tests/                        # Test suite (82 tests, 96% coverage)
+│   ├── dashboard.py              # HTML dashboard + JSON status API
+│   ├── security.py              # Admin API key auth dependency
+│   └── rate_limit.py            # In-memory sliding window rate limiter
+├── tests/                        # Test suite (93 tests)
 │   ├── conftest.py               # Fixtures, DB setup, env overrides
 │   ├── test_config.py
 │   ├── test_database.py
@@ -77,12 +79,13 @@ cognition/
 
 ## Endpoints
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/webhook/slack` | Slack Events API handler (reaction_added) |
-| `GET` | `/` | HTML observability dashboard |
-| `GET` | `/status` | JSON API for metrics and job tracking |
-| `GET` | `/health` | Health check |
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/webhook/slack` | Slack signature | Slack Events API handler (reaction_added) |
+| `GET` | `/` | Admin key | HTML observability dashboard |
+| `GET` | `/status` | Admin key | JSON API for metrics and job tracking |
+| `POST` | `/retry/{job_id}` | Admin key | Retry a failed/timed-out job |
+| `GET` | `/health` | None | Health check |
 
 ## How It Works
 
@@ -110,6 +113,11 @@ All configuration is via environment variables (managed as deployment/repo secre
 | `SLACK_CHANNEL_ID` | Channel ID for `#devin-report` (restricts which channel can trigger remediation) |
 | `DB_PATH` | SQLite database path (default: `./data/jobs.db`) |
 | `POLL_INTERVAL_SECONDS` | How often to poll active sessions (default: 30) |
+| `ADMIN_API_KEY` | API key for admin endpoints (empty = unrestricted) |
+| `RATE_LIMIT` | Webhook rate limit (default: `30/minute`) |
+| `MAX_RETRY_ATTEMPTS` | Max retry attempts for Devin API calls (default: 3) |
+| `RETRY_BASE_DELAY_SECONDS` | Base delay for exponential backoff (default: 5) |
+| `JOB_TIMEOUT_MINUTES` | Stale job timeout threshold (default: 60) |
 
 ## Local Development
 
@@ -156,13 +164,19 @@ GitHub Actions automatically syncs secrets and deploys on push to `main`:
 | `SLACK_SIGNING_SECRET` | Slack app signing secret |
 | `SLACK_CHANNEL_ID` | Slack channel ID |
 | `FLY_TOKEN` | Fly.io personal access token |
+| `ADMIN_API_KEY` | Admin auth for dashboard/status/retry endpoints (optional) |
 
 ## Security
 
+- **Admin API key authentication** — Dashboard, status API, and retry endpoints are protected by `ADMIN_API_KEY` (via `X-Admin-Key` header or `Authorization: Bearer <key>`)
+- **Rate limiting** — Webhook endpoint is rate-limited (configurable via `RATE_LIMIT`, default: 30/minute per IP)
 - **Slack signature verification** — All incoming webhooks are verified using HMAC-SHA256 before processing (including URL verification challenges)
 - **Channel restriction** — Only reactions from the configured `SLACK_CHANNEL_ID` trigger remediation
 - **HTML escaping** — All user-controlled content is escaped before rendering in the dashboard (XSS protection)
 - **SQL injection prevention** — Column names in dynamic queries are validated against a whitelist
+- **Pinned dependencies** — All production dependencies use exact version pins to prevent supply-chain attacks
+- **Log sanitization** — Sensitive data patterns (tokens, API keys) are automatically redacted from logs
+- **Production .env disabled** — `.env` file loading is automatically disabled on Fly.io (prevents stale config)
 - **No hardcoded secrets** — All credentials are read from environment variables
 
 ## Observability

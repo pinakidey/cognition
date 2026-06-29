@@ -1,3 +1,5 @@
+import os
+
 from pydantic_settings import BaseSettings
 
 
@@ -20,7 +22,17 @@ class Settings(BaseSettings):
     db_path: str = "./data/jobs.db"
     poll_interval_seconds: int = 30
 
-    model_config = {"env_file": ".env", "extra": "ignore"}
+    # Security
+    admin_api_key: str = ""
+    rate_limit: str = "30/minute"
+
+    # Retry & Failsafe
+    max_retry_attempts: int = 3
+    retry_base_delay_seconds: int = 5
+    job_timeout_minutes: int = 60
+
+    # Disable .env loading in deployed environments (Fly.io sets FLY_APP_NAME)
+    model_config = {"env_file": ".env" if not os.environ.get("FLY_APP_NAME") else None, "extra": "ignore"}
 
 
 settings = Settings()

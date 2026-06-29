@@ -77,7 +77,10 @@ def extract_github_issue_url(text: str, attachments: list[dict] | None = None) -
 
 @router.post("/webhook/slack")
 async def slack_webhook(request: Request) -> Response:
-    """Handle Slack Events API callbacks."""
+    """Handle Slack Events API callbacks. Rate-limited per IP."""
+    from app.rate_limit import check_rate_limit
+    await check_rate_limit(request)
+
     body = await request.body()
 
     # Verify signature first (before parsing JSON)
