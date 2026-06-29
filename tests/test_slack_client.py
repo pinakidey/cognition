@@ -5,13 +5,13 @@ import httpx
 import pytest
 import respx
 
-from slack_client import get_message_attachments, get_message_text, post_thread_reply
+from app.slack_client import get_message_attachments, get_message_text, post_thread_reply
 
 
 @respx.mock
 async def test_post_thread_reply_success(monkeypatch):
     """Successfully posts a thread reply."""
-    monkeypatch.setattr("config.settings.slack_bot_token", "xoxb-test")
+    monkeypatch.setattr("app.config.settings.slack_bot_token", "xoxb-test")
     respx.post("https://slack.com/api/chat.postMessage").mock(
         return_value=httpx.Response(200, json={"ok": True})
     )
@@ -23,7 +23,7 @@ async def test_post_thread_reply_success(monkeypatch):
 @respx.mock
 async def test_post_thread_reply_failure(monkeypatch):
     """Returns False when Slack API reports failure."""
-    monkeypatch.setattr("config.settings.slack_bot_token", "xoxb-test")
+    monkeypatch.setattr("app.config.settings.slack_bot_token", "xoxb-test")
     respx.post("https://slack.com/api/chat.postMessage").mock(
         return_value=httpx.Response(200, json={"ok": False, "error": "channel_not_found"})
     )
@@ -35,7 +35,7 @@ async def test_post_thread_reply_failure(monkeypatch):
 @respx.mock
 async def test_get_message_text_success(monkeypatch):
     """Retrieves message text from conversations.history."""
-    monkeypatch.setattr("config.settings.slack_bot_token", "xoxb-test")
+    monkeypatch.setattr("app.config.settings.slack_bot_token", "xoxb-test")
     respx.get("https://slack.com/api/conversations.history").mock(
         return_value=httpx.Response(200, json={
             "ok": True,
@@ -50,7 +50,7 @@ async def test_get_message_text_success(monkeypatch):
 @respx.mock
 async def test_get_message_text_no_messages(monkeypatch):
     """Returns None when no messages found."""
-    monkeypatch.setattr("config.settings.slack_bot_token", "xoxb-test")
+    monkeypatch.setattr("app.config.settings.slack_bot_token", "xoxb-test")
     respx.get("https://slack.com/api/conversations.history").mock(
         return_value=httpx.Response(200, json={"ok": True, "messages": []})
     )
@@ -62,7 +62,7 @@ async def test_get_message_text_no_messages(monkeypatch):
 @respx.mock
 async def test_get_message_text_api_error(monkeypatch):
     """Returns None on API error."""
-    monkeypatch.setattr("config.settings.slack_bot_token", "xoxb-test")
+    monkeypatch.setattr("app.config.settings.slack_bot_token", "xoxb-test")
     respx.get("https://slack.com/api/conversations.history").mock(
         return_value=httpx.Response(200, json={"ok": False, "error": "not_authed"})
     )
@@ -74,7 +74,7 @@ async def test_get_message_text_api_error(monkeypatch):
 @respx.mock
 async def test_get_message_attachments_success(monkeypatch):
     """Retrieves message attachments."""
-    monkeypatch.setattr("config.settings.slack_bot_token", "xoxb-test")
+    monkeypatch.setattr("app.config.settings.slack_bot_token", "xoxb-test")
     respx.get("https://slack.com/api/conversations.history").mock(
         return_value=httpx.Response(200, json={
             "ok": True,
@@ -95,7 +95,7 @@ async def test_get_message_attachments_success(monkeypatch):
 @respx.mock
 async def test_get_message_attachments_empty(monkeypatch):
     """Returns empty list when message has no attachments."""
-    monkeypatch.setattr("config.settings.slack_bot_token", "xoxb-test")
+    monkeypatch.setattr("app.config.settings.slack_bot_token", "xoxb-test")
     respx.get("https://slack.com/api/conversations.history").mock(
         return_value=httpx.Response(200, json={
             "ok": True,

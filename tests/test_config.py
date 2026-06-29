@@ -1,7 +1,7 @@
 """Tests for config.py — settings loading and defaults."""
 import os
 
-from config import Settings
+from app.config import Settings
 
 
 def test_defaults(monkeypatch):

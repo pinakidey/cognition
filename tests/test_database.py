@@ -1,7 +1,7 @@
 """Tests for database.py — job CRUD and queries."""
 import pytest
 
-from database import (
+from app.database import (
     create_job,
     get_active_jobs,
     get_all_jobs,
@@ -20,7 +20,7 @@ async def db_setup(init_test_db):
 
 async def test_init_db_creates_table(init_test_db):
     """init_db creates the remediation_jobs table."""
-    from database import get_db
+    from app.database import get_db
     db = await get_db()
     try:
         cursor = await db.execute(

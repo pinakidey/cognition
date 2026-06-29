@@ -18,11 +18,11 @@ os.environ["DB_PATH"] = ":memory:"
 def reset_db_path(tmp_path, monkeypatch):
     """Use a temporary database for each test."""
     db_file = str(tmp_path / "test.db")
-    monkeypatch.setattr("config.settings.db_path", db_file)
+    monkeypatch.setattr("app.config.settings.db_path", db_file)
 
 
 @pytest.fixture
 async def init_test_db(reset_db_path):
     """Initialize the test database schema."""
-    from database import init_db
+    from app.database import init_db
     await init_db()

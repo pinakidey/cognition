@@ -3,7 +3,7 @@ import httpx
 import pytest
 import respx
 
-from github_client import (
+from app.github_client import (
     comment_on_issue,
     get_issue,
     get_issue_linked_prs,
@@ -43,7 +43,7 @@ def test_parse_pr_url_not_matched():
 @respx.mock
 async def test_get_issue_success(monkeypatch):
     """Fetches issue details from GitHub API."""
-    monkeypatch.setattr("config.settings.gh_token", "ghp_test")
+    monkeypatch.setattr("app.config.settings.gh_token", "ghp_test")
     respx.get("https://api.github.com/repos/owner/repo/issues/1").mock(
         return_value=httpx.Response(200, json={
             "title": "Test Issue",
@@ -60,7 +60,7 @@ async def test_get_issue_success(monkeypatch):
 @respx.mock
 async def test_get_issue_not_found(monkeypatch):
     """Returns None for 404 responses."""
-    monkeypatch.setattr("config.settings.gh_token", "ghp_test")
+    monkeypatch.setattr("app.config.settings.gh_token", "ghp_test")
     respx.get("https://api.github.com/repos/owner/repo/issues/999").mock(
         return_value=httpx.Response(404, json={"message": "Not Found"})
     )
@@ -72,7 +72,7 @@ async def test_get_issue_not_found(monkeypatch):
 @respx.mock
 async def test_is_issue_open_true(monkeypatch):
     """Returns True for open issues."""
-    monkeypatch.setattr("config.settings.gh_token", "ghp_test")
+    monkeypatch.setattr("app.config.settings.gh_token", "ghp_test")
     respx.get("https://api.github.com/repos/owner/repo/issues/1").mock(
         return_value=httpx.Response(200, json={"state": "open"})
     )
@@ -83,7 +83,7 @@ async def test_is_issue_open_true(monkeypatch):
 @respx.mock
 async def test_is_issue_open_false(monkeypatch):
     """Returns False for closed issues."""
-    monkeypatch.setattr("config.settings.gh_token", "ghp_test")
+    monkeypatch.setattr("app.config.settings.gh_token", "ghp_test")
     respx.get("https://api.github.com/repos/owner/repo/issues/2").mock(
         return_value=httpx.Response(200, json={"state": "closed"})
     )
@@ -94,7 +94,7 @@ async def test_is_issue_open_false(monkeypatch):
 @respx.mock
 async def test_get_issue_linked_prs(monkeypatch):
     """Returns list of PRs referencing the issue."""
-    monkeypatch.setattr("config.settings.gh_token", "ghp_test")
+    monkeypatch.setattr("app.config.settings.gh_token", "ghp_test")
     respx.get("https://api.github.com/search/issues").mock(
         return_value=httpx.Response(200, json={
             "items": [
@@ -111,7 +111,7 @@ async def test_get_issue_linked_prs(monkeypatch):
 @respx.mock
 async def test_get_issue_linked_prs_none(monkeypatch):
     """Returns empty list when no PRs found."""
-    monkeypatch.setattr("config.settings.gh_token", "ghp_test")
+    monkeypatch.setattr("app.config.settings.gh_token", "ghp_test")
     respx.get("https://api.github.com/search/issues").mock(
         return_value=httpx.Response(200, json={"items": []})
     )
@@ -123,7 +123,7 @@ async def test_get_issue_linked_prs_none(monkeypatch):
 @respx.mock
 async def test_comment_on_issue_success(monkeypatch):
     """Posts a comment on a GitHub issue."""
-    monkeypatch.setattr("config.settings.gh_token", "ghp_test")
+    monkeypatch.setattr("app.config.settings.gh_token", "ghp_test")
     respx.post("https://api.github.com/repos/owner/repo/issues/1/comments").mock(
         return_value=httpx.Response(201, json={"id": 123})
     )
@@ -135,7 +135,7 @@ async def test_comment_on_issue_success(monkeypatch):
 @respx.mock
 async def test_comment_on_issue_failure(monkeypatch):
     """Returns False when comment fails."""
-    monkeypatch.setattr("config.settings.gh_token", "ghp_test")
+    monkeypatch.setattr("app.config.settings.gh_token", "ghp_test")
     respx.post("https://api.github.com/repos/owner/repo/issues/1/comments").mock(
         return_value=httpx.Response(403, json={"message": "Forbidden"})
     )

@@ -2,11 +2,11 @@ import asyncio
 import logging
 import re
 
-from config import settings
-from database import get_active_jobs, update_job
-from devin_client import get_session
-from github_client import comment_on_issue, parse_issue_url
-from slack_client import post_thread_reply
+from app.config import settings
+from app.database import get_active_jobs, update_job
+from app.devin_client import get_session
+from app.github_client import comment_on_issue, parse_issue_url
+from app.slack_client import post_thread_reply
 
 logger = logging.getLogger(__name__)
 

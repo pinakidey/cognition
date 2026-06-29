@@ -3,15 +3,15 @@ import httpx
 import pytest
 import respx
 
-from devin_client import create_session, get_session
+from app.devin_client import create_session, get_session
 
 
 @respx.mock
 async def test_create_session_success(monkeypatch):
     """Creates a Devin session with prompt and tags."""
-    monkeypatch.setattr("config.settings.devin_api_key", "apk_test")
-    monkeypatch.setattr("config.settings.devin_api_base", "https://api.devin.ai/v1")
-    monkeypatch.setattr("config.settings.devin_max_acu", 10)
+    monkeypatch.setattr("app.config.settings.devin_api_key", "apk_test")
+    monkeypatch.setattr("app.config.settings.devin_api_base", "https://api.devin.ai/v1")
+    monkeypatch.setattr("app.config.settings.devin_max_acu", 10)
 
     respx.post("https://api.devin.ai/v1/sessions").mock(
         return_value=httpx.Response(200, json={
@@ -40,9 +40,9 @@ async def test_create_session_success(monkeypatch):
 @respx.mock
 async def test_create_session_no_tags(monkeypatch):
     """Creates session without tags when None provided."""
-    monkeypatch.setattr("config.settings.devin_api_key", "apk_test")
-    monkeypatch.setattr("config.settings.devin_api_base", "https://api.devin.ai/v1")
-    monkeypatch.setattr("config.settings.devin_max_acu", 5)
+    monkeypatch.setattr("app.config.settings.devin_api_key", "apk_test")
+    monkeypatch.setattr("app.config.settings.devin_api_base", "https://api.devin.ai/v1")
+    monkeypatch.setattr("app.config.settings.devin_max_acu", 5)
 
     respx.post("https://api.devin.ai/v1/sessions").mock(
         return_value=httpx.Response(200, json={
@@ -62,8 +62,8 @@ async def test_create_session_no_tags(monkeypatch):
 @respx.mock
 async def test_create_session_api_error(monkeypatch):
     """Raises on API error."""
-    monkeypatch.setattr("config.settings.devin_api_key", "apk_test")
-    monkeypatch.setattr("config.settings.devin_api_base", "https://api.devin.ai/v1")
+    monkeypatch.setattr("app.config.settings.devin_api_key", "apk_test")
+    monkeypatch.setattr("app.config.settings.devin_api_base", "https://api.devin.ai/v1")
 
     respx.post("https://api.devin.ai/v1/sessions").mock(
         return_value=httpx.Response(401, json={"error": "Unauthorized"})
@@ -76,8 +76,8 @@ async def test_create_session_api_error(monkeypatch):
 @respx.mock
 async def test_get_session_success(monkeypatch):
     """Gets session status."""
-    monkeypatch.setattr("config.settings.devin_api_key", "apk_test")
-    monkeypatch.setattr("config.settings.devin_api_base", "https://api.devin.ai/v1")
+    monkeypatch.setattr("app.config.settings.devin_api_key", "apk_test")
+    monkeypatch.setattr("app.config.settings.devin_api_base", "https://api.devin.ai/v1")
 
     respx.get("https://api.devin.ai/v1/sessions/sess-abc").mock(
         return_value=httpx.Response(200, json={
@@ -95,8 +95,8 @@ async def test_get_session_success(monkeypatch):
 @respx.mock
 async def test_get_session_not_found(monkeypatch):
     """Raises on 404."""
-    monkeypatch.setattr("config.settings.devin_api_key", "apk_test")
-    monkeypatch.setattr("config.settings.devin_api_base", "https://api.devin.ai/v1")
+    monkeypatch.setattr("app.config.settings.devin_api_key", "apk_test")
+    monkeypatch.setattr("app.config.settings.devin_api_base", "https://api.devin.ai/v1")
 
     respx.get("https://api.devin.ai/v1/sessions/nonexistent").mock(
         return_value=httpx.Response(404, json={"error": "Not Found"})

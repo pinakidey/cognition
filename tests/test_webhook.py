@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from webhook import extract_github_issue_url, verify_slack_signature
+from app.webhook import extract_github_issue_url, verify_slack_signature
 
 
 def _make_signature(body: bytes, secret: str = "test-signing-secret", ts: str | None = None) -> tuple[str, str]:
@@ -25,7 +25,7 @@ def _make_signature(body: bytes, secret: str = "test-signing-secret", ts: str | 
 
 def test_verify_valid_signature(monkeypatch):
     """Valid signature passes verification."""
-    monkeypatch.setattr("config.settings.slack_signing_secret", "test-secret")
+    monkeypatch.setattr("app.config.settings.slack_signing_secret", "test-secret")
     body = b'{"type":"url_verification","challenge":"abc"}'
     timestamp = str(int(time.time()))
     sig_basestring = f"v0:{timestamp}:{body.decode('utf-8')}"
@@ -38,7 +38,7 @@ def test_verify_valid_signature(monkeypatch):
 
 def test_verify_invalid_signature(monkeypatch):
     """Invalid signature fails verification."""
-    monkeypatch.setattr("config.settings.slack_signing_secret", "test-secret")
+    monkeypatch.setattr("app.config.settings.slack_signing_secret", "test-secret")
     body = b'{"type":"event"}'
     timestamp = str(int(time.time()))
 
@@ -47,20 +47,20 @@ def test_verify_invalid_signature(monkeypatch):
 
 def test_verify_no_secret_configured(monkeypatch):
     """Missing signing secret rejects all requests."""
-    monkeypatch.setattr("config.settings.slack_signing_secret", "")
+    monkeypatch.setattr("app.config.settings.slack_signing_secret", "")
     assert verify_slack_signature(b"body", "12345", "v0=sig") is False
 
 
 def test_verify_expired_timestamp(monkeypatch):
     """Timestamp older than 5 minutes fails."""
-    monkeypatch.setattr("config.settings.slack_signing_secret", "test-secret")
+    monkeypatch.setattr("app.config.settings.slack_signing_secret", "test-secret")
     old_ts = str(int(time.time()) - 600)
     assert verify_slack_signature(b"body", old_ts, "v0=sig") is False
 
 
 def test_verify_invalid_timestamp(monkeypatch):
     """Non-numeric timestamp fails gracefully."""
-    monkeypatch.setattr("config.settings.slack_signing_secret", "test-secret")
+    monkeypatch.setattr("app.config.settings.slack_signing_secret", "test-secret")
     assert verify_slack_signature(b"body", "not-a-number", "v0=sig") is False
 
 
@@ -115,13 +115,13 @@ def test_extract_url_text_takes_priority_over_attachments():
 @pytest.fixture
 def client():
     """Create a test client with mocked signature verification."""
-    from main import app
+    from app.main import app
     return TestClient(app)
 
 
 def test_webhook_rejects_invalid_signature(client, monkeypatch):
     """Returns 401 for invalid Slack signature."""
-    monkeypatch.setattr("config.settings.slack_signing_secret", "real-secret")
+    monkeypatch.setattr("app.config.settings.slack_signing_secret", "real-secret")
     response = client.post(
         "/webhook/slack",
         content=b'{"type":"event"}',
@@ -135,7 +135,7 @@ def test_webhook_rejects_invalid_signature(client, monkeypatch):
 
 def test_webhook_url_verification(client, monkeypatch):
     """Responds to Slack URL verification challenge."""
-    monkeypatch.setattr("config.settings.slack_signing_secret", "test-secret")
+    monkeypatch.setattr("app.config.settings.slack_signing_secret", "test-secret")
     body = json.dumps({"type": "url_verification", "challenge": "test-challenge-abc"}).encode()
     timestamp = str(int(time.time()))
     sig_basestring = f"v0:{timestamp}:{body.decode('utf-8')}"
@@ -157,7 +157,7 @@ def test_webhook_url_verification(client, monkeypatch):
 
 def test_webhook_returns_400_for_invalid_json(client, monkeypatch):
     """Returns 400 if body isn't valid JSON after sig verification passes."""
-    monkeypatch.setattr("config.settings.slack_signing_secret", "test-secret")
+    monkeypatch.setattr("app.config.settings.slack_signing_secret", "test-secret")
     body = b"not valid json"
     timestamp = str(int(time.time()))
     sig_basestring = f"v0:{timestamp}:{body.decode('utf-8')}"
@@ -178,7 +178,7 @@ def test_webhook_returns_400_for_invalid_json(client, monkeypatch):
 
 def test_webhook_reaction_event_returns_200(client, monkeypatch):
     """Returns 200 immediately for reaction events (processed in background)."""
-    monkeypatch.setattr("config.settings.slack_signing_secret", "test-secret")
+    monkeypatch.setattr("app.config.settings.slack_signing_secret", "test-secret")
     payload = {
         "type": "event_callback",
         "event": {

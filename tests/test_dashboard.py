@@ -2,12 +2,12 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from database import create_job, init_db, update_job
+from app.database import create_job, init_db, update_job
 
 
 @pytest.fixture
 def client(init_test_db):
-    from main import app
+    from app.main import app
     return TestClient(app)
 
 
@@ -23,7 +23,7 @@ async def test_status_empty(client):
 
 async def test_status_with_jobs(init_test_db):
     """Status endpoint reflects created jobs."""
-    from main import app
+    from app.main import app
     client = TestClient(app)
 
     await create_job(
@@ -53,7 +53,7 @@ async def test_dashboard_html(client):
 
 async def test_dashboard_with_jobs_html(init_test_db):
     """Dashboard HTML shows job data."""
-    from main import app
+    from app.main import app
     client = TestClient(app)
 
     await create_job(
@@ -68,7 +68,7 @@ async def test_dashboard_with_jobs_html(init_test_db):
 
 async def test_dashboard_escapes_html(init_test_db):
     """Dashboard properly escapes user content to prevent XSS."""
-    from main import app
+    from app.main import app
     client = TestClient(app)
 
     await create_job(

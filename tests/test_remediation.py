@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from remediation import _issue_locks, build_fix_prompt, trigger_remediation
+from app.remediation import _issue_locks, build_fix_prompt, trigger_remediation
 
 
 @pytest.fixture(autouse=True)
@@ -39,7 +39,7 @@ def test_build_fix_prompt_handles_empty_body():
     assert "#5" in prompt
 
 
-@patch("remediation.parse_issue_url")
+@patch("app.remediation.parse_issue_url")
 async def test_trigger_invalid_url(mock_parse):
     """Returns error for unparseable issue URL."""
     mock_parse.return_value = None
@@ -52,9 +52,9 @@ async def test_trigger_invalid_url(mock_parse):
     assert "Invalid issue URL" in result["error"]
 
 
-@patch("remediation.is_issue_open", new_callable=AsyncMock)
-@patch("remediation.parse_issue_url")
-@patch("remediation.get_job_by_issue_url", new_callable=AsyncMock)
+@patch("app.remediation.is_issue_open", new_callable=AsyncMock)
+@patch("app.remediation.parse_issue_url")
+@patch("app.remediation.get_job_by_issue_url", new_callable=AsyncMock)
 async def test_trigger_duplicate_active_job(mock_get_job, mock_parse, mock_open):
     """Returns error when active job already exists for the issue."""
     mock_parse.return_value = ("owner/repo", 1)
@@ -71,9 +71,9 @@ async def test_trigger_duplicate_active_job(mock_get_job, mock_parse, mock_open)
     assert "Active remediation already exists" in result["error"]
 
 
-@patch("remediation.is_issue_open", new_callable=AsyncMock)
-@patch("remediation.parse_issue_url")
-@patch("remediation.get_job_by_issue_url", new_callable=AsyncMock)
+@patch("app.remediation.is_issue_open", new_callable=AsyncMock)
+@patch("app.remediation.parse_issue_url")
+@patch("app.remediation.get_job_by_issue_url", new_callable=AsyncMock)
 async def test_trigger_blocked_job_counts_as_duplicate(mock_get_job, mock_parse, mock_open):
     """Blocked jobs also prevent duplicate triggering."""
     mock_parse.return_value = ("owner/repo", 2)
@@ -87,9 +87,9 @@ async def test_trigger_blocked_job_counts_as_duplicate(mock_get_job, mock_parse,
     assert "Active remediation already exists" in result["error"]
 
 
-@patch("remediation.is_issue_open", new_callable=AsyncMock)
-@patch("remediation.parse_issue_url")
-@patch("remediation.get_job_by_issue_url", new_callable=AsyncMock)
+@patch("app.remediation.is_issue_open", new_callable=AsyncMock)
+@patch("app.remediation.parse_issue_url")
+@patch("app.remediation.get_job_by_issue_url", new_callable=AsyncMock)
 async def test_trigger_closed_issue(mock_get_job, mock_parse, mock_open):
     """Returns error when issue is closed."""
     mock_parse.return_value = ("owner/repo", 3)
@@ -104,10 +104,10 @@ async def test_trigger_closed_issue(mock_get_job, mock_parse, mock_open):
     assert "not open" in result["error"]
 
 
-@patch("remediation.get_issue_linked_prs", new_callable=AsyncMock)
-@patch("remediation.is_issue_open", new_callable=AsyncMock)
-@patch("remediation.parse_issue_url")
-@patch("remediation.get_job_by_issue_url", new_callable=AsyncMock)
+@patch("app.remediation.get_issue_linked_prs", new_callable=AsyncMock)
+@patch("app.remediation.is_issue_open", new_callable=AsyncMock)
+@patch("app.remediation.parse_issue_url")
+@patch("app.remediation.get_job_by_issue_url", new_callable=AsyncMock)
 async def test_trigger_existing_pr(mock_get_job, mock_parse, mock_open, mock_prs):
     """Returns error when open PR already exists for the issue."""
     mock_parse.return_value = ("owner/repo", 4)
@@ -123,14 +123,14 @@ async def test_trigger_existing_pr(mock_get_job, mock_parse, mock_open, mock_prs
     assert "Open PR(s) already exist" in result["error"]
 
 
-@patch("remediation.post_thread_reply", new_callable=AsyncMock)
-@patch("remediation.comment_on_issue", new_callable=AsyncMock)
-@patch("remediation.create_session", new_callable=AsyncMock)
-@patch("remediation.get_issue", new_callable=AsyncMock)
-@patch("remediation.get_issue_linked_prs", new_callable=AsyncMock)
-@patch("remediation.is_issue_open", new_callable=AsyncMock)
-@patch("remediation.parse_issue_url")
-@patch("remediation.get_job_by_issue_url", new_callable=AsyncMock)
+@patch("app.remediation.post_thread_reply", new_callable=AsyncMock)
+@patch("app.remediation.comment_on_issue", new_callable=AsyncMock)
+@patch("app.remediation.create_session", new_callable=AsyncMock)
+@patch("app.remediation.get_issue", new_callable=AsyncMock)
+@patch("app.remediation.get_issue_linked_prs", new_callable=AsyncMock)
+@patch("app.remediation.is_issue_open", new_callable=AsyncMock)
+@patch("app.remediation.parse_issue_url")
+@patch("app.remediation.get_job_by_issue_url", new_callable=AsyncMock)
 async def test_trigger_success(
     mock_get_job, mock_parse, mock_open, mock_prs,
     mock_get_issue, mock_create_session, mock_comment, mock_slack
@@ -163,14 +163,14 @@ async def test_trigger_success(
     mock_slack.assert_called_once()
 
 
-@patch("remediation.post_thread_reply", new_callable=AsyncMock)
-@patch("remediation.comment_on_issue", new_callable=AsyncMock)
-@patch("remediation.create_session", new_callable=AsyncMock)
-@patch("remediation.get_issue", new_callable=AsyncMock)
-@patch("remediation.get_issue_linked_prs", new_callable=AsyncMock)
-@patch("remediation.is_issue_open", new_callable=AsyncMock)
-@patch("remediation.parse_issue_url")
-@patch("remediation.get_job_by_issue_url", new_callable=AsyncMock)
+@patch("app.remediation.post_thread_reply", new_callable=AsyncMock)
+@patch("app.remediation.comment_on_issue", new_callable=AsyncMock)
+@patch("app.remediation.create_session", new_callable=AsyncMock)
+@patch("app.remediation.get_issue", new_callable=AsyncMock)
+@patch("app.remediation.get_issue_linked_prs", new_callable=AsyncMock)
+@patch("app.remediation.is_issue_open", new_callable=AsyncMock)
+@patch("app.remediation.parse_issue_url")
+@patch("app.remediation.get_job_by_issue_url", new_callable=AsyncMock)
 async def test_trigger_session_creation_failure(
     mock_get_job, mock_parse, mock_open, mock_prs,
     mock_get_issue, mock_create_session, mock_comment, mock_slack
@@ -192,14 +192,14 @@ async def test_trigger_session_creation_failure(
     assert "API timeout" in result["error"]
 
 
-@patch("remediation.post_thread_reply", new_callable=AsyncMock)
-@patch("remediation.comment_on_issue", new_callable=AsyncMock)
-@patch("remediation.create_session", new_callable=AsyncMock)
-@patch("remediation.get_issue", new_callable=AsyncMock)
-@patch("remediation.get_issue_linked_prs", new_callable=AsyncMock)
-@patch("remediation.is_issue_open", new_callable=AsyncMock)
-@patch("remediation.parse_issue_url")
-@patch("remediation.get_job_by_issue_url", new_callable=AsyncMock)
+@patch("app.remediation.post_thread_reply", new_callable=AsyncMock)
+@patch("app.remediation.comment_on_issue", new_callable=AsyncMock)
+@patch("app.remediation.create_session", new_callable=AsyncMock)
+@patch("app.remediation.get_issue", new_callable=AsyncMock)
+@patch("app.remediation.get_issue_linked_prs", new_callable=AsyncMock)
+@patch("app.remediation.is_issue_open", new_callable=AsyncMock)
+@patch("app.remediation.parse_issue_url")
+@patch("app.remediation.get_job_by_issue_url", new_callable=AsyncMock)
 async def test_race_condition_serialization(
     mock_get_job, mock_parse, mock_open, mock_prs,
     mock_get_issue, mock_create_session, mock_comment, mock_slack

@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from poller import extract_pr_url, poll_active_jobs
+from app.poller import extract_pr_url, poll_active_jobs
 
 
 # --- extract_pr_url tests ---
@@ -53,10 +53,10 @@ async def db_setup(init_test_db):
     pass
 
 
-@patch("poller.post_thread_reply", new_callable=AsyncMock)
-@patch("poller.comment_on_issue", new_callable=AsyncMock)
-@patch("poller.get_session", new_callable=AsyncMock)
-@patch("poller.get_active_jobs", new_callable=AsyncMock)
+@patch("app.poller.post_thread_reply", new_callable=AsyncMock)
+@patch("app.poller.comment_on_issue", new_callable=AsyncMock)
+@patch("app.poller.get_session", new_callable=AsyncMock)
+@patch("app.poller.get_active_jobs", new_callable=AsyncMock)
 async def test_poll_finished_with_pr(mock_jobs, mock_session, mock_comment, mock_slack):
     """Completed session with PR updates job and notifies."""
     mock_jobs.return_value = [{
@@ -85,10 +85,10 @@ async def test_poll_finished_with_pr(mock_jobs, mock_session, mock_comment, mock
     assert "PR ready" in mock_slack.call_args[0][2]
 
 
-@patch("poller.post_thread_reply", new_callable=AsyncMock)
-@patch("poller.comment_on_issue", new_callable=AsyncMock)
-@patch("poller.get_session", new_callable=AsyncMock)
-@patch("poller.get_active_jobs", new_callable=AsyncMock)
+@patch("app.poller.post_thread_reply", new_callable=AsyncMock)
+@patch("app.poller.comment_on_issue", new_callable=AsyncMock)
+@patch("app.poller.get_session", new_callable=AsyncMock)
+@patch("app.poller.get_active_jobs", new_callable=AsyncMock)
 async def test_poll_finished_no_pr(mock_jobs, mock_session, mock_comment, mock_slack):
     """Finished session without PR sends warning notification."""
     mock_jobs.return_value = [{
@@ -114,10 +114,10 @@ async def test_poll_finished_no_pr(mock_jobs, mock_session, mock_comment, mock_s
     assert "no PR was created" in mock_comment.call_args[0][2]
 
 
-@patch("poller.post_thread_reply", new_callable=AsyncMock)
-@patch("poller.update_job", new_callable=AsyncMock)
-@patch("poller.get_session", new_callable=AsyncMock)
-@patch("poller.get_active_jobs", new_callable=AsyncMock)
+@patch("app.poller.post_thread_reply", new_callable=AsyncMock)
+@patch("app.poller.update_job", new_callable=AsyncMock)
+@patch("app.poller.get_session", new_callable=AsyncMock)
+@patch("app.poller.get_active_jobs", new_callable=AsyncMock)
 async def test_poll_blocked_transition(mock_jobs, mock_session, mock_update, mock_slack):
     """Session becoming blocked updates status and notifies."""
     mock_jobs.return_value = [{
@@ -140,9 +140,9 @@ async def test_poll_blocked_transition(mock_jobs, mock_session, mock_update, moc
     assert "blocked" in mock_slack.call_args[0][2]
 
 
-@patch("poller.update_job", new_callable=AsyncMock)
-@patch("poller.get_session", new_callable=AsyncMock)
-@patch("poller.get_active_jobs", new_callable=AsyncMock)
+@patch("app.poller.update_job", new_callable=AsyncMock)
+@patch("app.poller.get_session", new_callable=AsyncMock)
+@patch("app.poller.get_active_jobs", new_callable=AsyncMock)
 async def test_poll_unblocked_transition(mock_jobs, mock_session, mock_update):
     """Session transitioning from blocked back to running updates status."""
     mock_jobs.return_value = [{
@@ -162,10 +162,10 @@ async def test_poll_unblocked_transition(mock_jobs, mock_session, mock_update):
     mock_update.assert_called_once_with(4, status="in_progress")
 
 
-@patch("poller.post_thread_reply", new_callable=AsyncMock)
-@patch("poller.update_job", new_callable=AsyncMock)
-@patch("poller.get_session", new_callable=AsyncMock)
-@patch("poller.get_active_jobs", new_callable=AsyncMock)
+@patch("app.poller.post_thread_reply", new_callable=AsyncMock)
+@patch("app.poller.update_job", new_callable=AsyncMock)
+@patch("app.poller.get_session", new_callable=AsyncMock)
+@patch("app.poller.get_active_jobs", new_callable=AsyncMock)
 async def test_poll_error_status(mock_jobs, mock_session, mock_update, mock_slack):
     """Session with error status marks job as failed."""
     mock_jobs.return_value = [{
@@ -188,8 +188,8 @@ async def test_poll_error_status(mock_jobs, mock_session, mock_update, mock_slac
     assert "failed" in mock_slack.call_args[0][2]
 
 
-@patch("poller.get_session", new_callable=AsyncMock)
-@patch("poller.get_active_jobs", new_callable=AsyncMock)
+@patch("app.poller.get_session", new_callable=AsyncMock)
+@patch("app.poller.get_active_jobs", new_callable=AsyncMock)
 async def test_poll_skips_jobs_without_session_id(mock_jobs, mock_session):
     """Jobs without session_id are skipped."""
     mock_jobs.return_value = [{
@@ -205,8 +205,8 @@ async def test_poll_skips_jobs_without_session_id(mock_jobs, mock_session):
     mock_session.assert_not_called()
 
 
-@patch("poller.get_session", new_callable=AsyncMock)
-@patch("poller.get_active_jobs", new_callable=AsyncMock)
+@patch("app.poller.get_session", new_callable=AsyncMock)
+@patch("app.poller.get_active_jobs", new_callable=AsyncMock)
 async def test_poll_handles_api_error_gracefully(mock_jobs, mock_session):
     """API errors don't crash the poller."""
     mock_jobs.return_value = [{
