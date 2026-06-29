@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import hmac
 import logging
@@ -23,8 +24,8 @@ def verify_slack_signature(
 ) -> bool:
     """Verify Slack request signature."""
     if not settings.slack_signing_secret:
-        logger.warning("No Slack signing secret configured — skipping verification")
-        return True
+        logger.warning("No Slack signing secret configured — rejecting request")
+        return False
 
     # Check timestamp is recent (within 5 minutes)
     try:
@@ -82,7 +83,7 @@ async def slack_webhook(request: Request) -> Response:
     # Verify signature first (before handling any payload)
     timestamp = request.headers.get("x-slack-request-timestamp", "")
     signature = request.headers.get("x-slack-signature", "")
-    if settings.slack_signing_secret and not verify_slack_signature(body, timestamp, signature):
+    if not verify_slack_signature(body, timestamp, signature):
         logger.warning("Invalid Slack signature")
         return Response(status_code=401)
 
@@ -98,7 +99,7 @@ async def slack_webhook(request: Request) -> Response:
     event_type = event.get("type")
 
     if event_type == "reaction_added":
-        await handle_reaction_added(event)
+        asyncio.create_task(handle_reaction_added(event))
 
     # Always respond 200 quickly to Slack
     return Response(status_code=200)
@@ -118,8 +119,13 @@ async def handle_reaction_added(event: dict) -> None:
         logger.warning("reaction_added event missing channel or ts")
         return
 
+    # Reject if no channel is configured (fail closed)
+    if not settings.slack_channel_id:
+        logger.warning("SLACK_CHANNEL_ID not configured — ignoring all reactions")
+        return
+
     # Only process reactions from the configured channel
-    if settings.slack_channel_id and channel != settings.slack_channel_id:
+    if channel != settings.slack_channel_id:
         logger.info("Ignoring reaction from non-configured channel %s", channel)
         return
 

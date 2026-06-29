@@ -88,14 +88,16 @@ async def poll_active_jobs() -> None:
                         )
 
             elif status == "blocked":
-                await update_job(job["id"], status="blocked")
-                if job.get("slack_channel") and job.get("slack_message_ts"):
-                    await post_thread_reply(
-                        job["slack_channel"],
-                        job["slack_message_ts"],
-                        f"⏸️ Session for issue #{job['issue_number']} is blocked and needs attention. "
-                        f"Session: {job.get('session_url', 'N/A')}",
-                    )
+                # Only notify on transition to blocked (not on every poll cycle)
+                if job["status"] != "blocked":
+                    await update_job(job["id"], status="blocked")
+                    if job.get("slack_channel") and job.get("slack_message_ts"):
+                        await post_thread_reply(
+                            job["slack_channel"],
+                            job["slack_message_ts"],
+                            f"⏸️ Session for issue #{job['issue_number']} is blocked and needs attention. "
+                            f"Session: {job.get('session_url', 'N/A')}",
+                        )
 
             elif status in ("stopped", "error"):
                 await update_job(job["id"], status="failed")
