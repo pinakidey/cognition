@@ -1,7 +1,5 @@
 import logging
-import re
 
-from config import settings
 from database import create_job, get_job_by_issue_url, update_job
 from devin_client import create_session
 from github_client import (

@@ -18,7 +18,7 @@ async def init_db() -> None:
         await db.execute("""
             CREATE TABLE IF NOT EXISTS remediation_jobs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                issue_url TEXT NOT NULL UNIQUE,
+                issue_url TEXT NOT NULL,
                 issue_number INTEGER NOT NULL,
                 issue_title TEXT NOT NULL,
                 session_id TEXT,
@@ -62,10 +62,20 @@ async def create_job(
         await db.close()
 
 
+ALLOWED_COLUMNS = frozenset({
+    "session_id", "session_url", "pr_url", "status",
+    "triggered_by", "slack_message_ts", "slack_channel", "updated_at",
+})
+
+
 async def update_job(job_id: int, **kwargs: str | None) -> None:
     db = await get_db()
     try:
         kwargs["updated_at"] = datetime.now(timezone.utc).isoformat()
+        # Whitelist column names to prevent SQL injection
+        for key in kwargs:
+            if key not in ALLOWED_COLUMNS:
+                raise ValueError(f"Invalid column name: {key}")
         set_clause = ", ".join(f"{k} = ?" for k in kwargs)
         values = list(kwargs.values()) + [job_id]
         await db.execute(
@@ -78,10 +88,12 @@ async def update_job(job_id: int, **kwargs: str | None) -> None:
 
 
 async def get_job_by_issue_url(issue_url: str) -> dict | None:
+    """Get the most recent job for an issue URL."""
     db = await get_db()
     try:
         cursor = await db.execute(
-            "SELECT * FROM remediation_jobs WHERE issue_url = ?", (issue_url,)
+            "SELECT * FROM remediation_jobs WHERE issue_url = ? ORDER BY created_at DESC LIMIT 1",
+            (issue_url,),
         )
         row = await cursor.fetchone()
         return dict(row) if row else None
@@ -93,7 +105,7 @@ async def get_active_jobs() -> list[dict]:
     db = await get_db()
     try:
         cursor = await db.execute(
-            "SELECT * FROM remediation_jobs WHERE status IN ('pending', 'in_progress')"
+            "SELECT * FROM remediation_jobs WHERE status IN ('pending', 'in_progress', 'blocked')"
         )
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]

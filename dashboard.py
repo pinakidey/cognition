@@ -1,3 +1,5 @@
+from html import escape
+
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
@@ -47,18 +49,20 @@ async def dashboard():
             "finished_no_pr": "⚠️",
         }.get(job["status"], "❓")
 
-        pr_link = f'<a href="{job["pr_url"]}">{job["pr_url"].split("/")[-1]}</a>' if job.get("pr_url") else "—"
-        session_link = f'<a href="{job["session_url"]}">View</a>' if job.get("session_url") else "—"
+        pr_url = escape(job["pr_url"]) if job.get("pr_url") else ""
+        pr_link = f'<a href="{pr_url}">{pr_url.split("/")[-1]}</a>' if pr_url else "—"
+        session_url = escape(job["session_url"]) if job.get("session_url") else ""
+        session_link = f'<a href="{session_url}">View</a>' if session_url else "—"
 
         rows += f"""
         <tr>
             <td>#{job['issue_number']}</td>
-            <td>{job['issue_title'][:60]}</td>
-            <td>{status_icon} {job['status']}</td>
+            <td>{escape(job['issue_title'][:60])}</td>
+            <td>{status_icon} {escape(job['status'])}</td>
             <td>{session_link}</td>
             <td>{pr_link}</td>
-            <td>{job['triggered_by']}</td>
-            <td>{job['created_at'][:16]}</td>
+            <td>{escape(job['triggered_by'] or '')}</td>
+            <td>{escape(job['created_at'][:16])}</td>
         </tr>"""
 
     html = f"""<!DOCTYPE html>

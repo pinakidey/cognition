@@ -27,7 +27,10 @@ def verify_slack_signature(
         return True
 
     # Check timestamp is recent (within 5 minutes)
-    if abs(time.time() - int(timestamp)) > 300:
+    try:
+        if abs(time.time() - int(timestamp)) > 300:
+            return False
+    except (ValueError, TypeError):
         return False
 
     sig_basestring = f"v0:{timestamp}:{body.decode('utf-8')}"
@@ -76,19 +79,19 @@ async def slack_webhook(request: Request) -> Response:
     body = await request.body()
     payload = await request.json()
 
-    # Handle Slack URL verification challenge
-    if payload.get("type") == "url_verification":
-        return Response(
-            content=payload["challenge"],
-            media_type="text/plain",
-        )
-
-    # Verify signature
+    # Verify signature first (before handling any payload)
     timestamp = request.headers.get("x-slack-request-timestamp", "")
     signature = request.headers.get("x-slack-signature", "")
     if settings.slack_signing_secret and not verify_slack_signature(body, timestamp, signature):
         logger.warning("Invalid Slack signature")
         return Response(status_code=401)
+
+    # Handle Slack URL verification challenge (after signature is verified)
+    if payload.get("type") == "url_verification":
+        return Response(
+            content=payload["challenge"],
+            media_type="text/plain",
+        )
 
     # Process events
     event = payload.get("event", {})
@@ -113,6 +116,11 @@ async def handle_reaction_added(event: dict) -> None:
 
     if not channel or not message_ts:
         logger.warning("reaction_added event missing channel or ts")
+        return
+
+    # Only process reactions from the configured channel
+    if settings.slack_channel_id and channel != settings.slack_channel_id:
+        logger.info("Ignoring reaction from non-configured channel %s", channel)
         return
 
     logger.info(

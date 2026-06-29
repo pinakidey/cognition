@@ -56,11 +56,11 @@ All configuration is via environment variables (managed as deployment/repo secre
 | `DEVIN_API_KEY` | Devin API key (service or personal) |
 | `DEVIN_API_BASE` | Devin API base URL (default: `https://api.devin.ai/v1`) |
 | `DEVIN_MAX_ACU` | Max ACUs per remediation session (default: 10) |
-| `GITHUB_TOKEN` | GitHub PAT with repo access |
+| `GH_TOKEN` | GitHub PAT with repo access (`GITHUB_` prefix is reserved by GitHub Actions) |
 | `GITHUB_REPO` | Target repository (default: `pinakidey/superset`) |
 | `SLACK_BOT_TOKEN` | Slack Bot OAuth token |
 | `SLACK_SIGNING_SECRET` | Slack app signing secret for request verification |
-| `SLACK_CHANNEL_ID` | Channel ID for `#devin-report` |
+| `SLACK_CHANNEL_ID` | Channel ID for `#devin-report` (restricts which channel can trigger remediation) |
 | `DB_PATH` | SQLite database path (default: `./data/jobs.db`) |
 | `POLL_INTERVAL_SECONDS` | How often to poll active sessions (default: 30) |
 
@@ -72,12 +72,13 @@ pip install -e .
 
 # Set environment variables
 export DEVIN_API_KEY=your_key
-export GITHUB_TOKEN=your_token
+export GH_TOKEN=your_token
 export SLACK_BOT_TOKEN=xoxb-...
 export SLACK_SIGNING_SECRET=...
+export SLACK_CHANNEL_ID=C0BE0NKLY3E
 
 # Run the service
-uvicorn app.main:app --reload --port 8000
+uvicorn main:app --reload --port 8000
 ```
 
 ## Deployment
@@ -85,8 +86,23 @@ uvicorn app.main:app --reload --port 8000
 The service is deployed via Fly.io with a persistent volume for SQLite storage.
 
 ```bash
+fly launch --name devin-remediation
+fly secrets set \
+  DEVIN_API_KEY=apk_... \
+  GH_TOKEN=github_pat_... \
+  SLACK_BOT_TOKEN=xoxb-... \
+  SLACK_SIGNING_SECRET=... \
+  SLACK_CHANNEL_ID=C0BE0NKLY3E
 fly deploy
 ```
+
+## Security
+
+- **Slack signature verification** — All incoming webhooks are verified using HMAC-SHA256 before processing (including URL verification challenges)
+- **Channel restriction** — Only reactions from the configured `SLACK_CHANNEL_ID` trigger remediation
+- **HTML escaping** — All user-controlled content is escaped before rendering in the dashboard (XSS protection)
+- **SQL injection prevention** — Column names in dynamic queries are validated against a whitelist
+- **No hardcoded secrets** — All credentials are read from environment variables
 
 ## Observability
 

@@ -7,7 +7,7 @@ from config import settings
 logger = logging.getLogger(__name__)
 
 HEADERS = {
-    "Authorization": f"token {settings.github_token}",
+    "Authorization": f"token {settings.gh_token}",
     "Accept": "application/vnd.github.v3+json",
 }
 

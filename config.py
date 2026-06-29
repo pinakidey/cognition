@@ -7,8 +7,8 @@ class Settings(BaseSettings):
     devin_api_base: str = "https://api.devin.ai/v1"
     devin_max_acu: int = 10
 
-    # GitHub
-    github_token: str = ""
+    # GitHub (use GH_TOKEN since GITHUB_ prefix is reserved by GitHub Actions)
+    gh_token: str = ""
     github_repo: str = "pinakidey/superset"
 
     # Slack
