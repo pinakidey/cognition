@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import hmac
+import json
 import logging
 import re
 import time
@@ -78,14 +79,18 @@ def extract_github_issue_url(text: str, attachments: list[dict] | None = None) -
 async def slack_webhook(request: Request) -> Response:
     """Handle Slack Events API callbacks."""
     body = await request.body()
-    payload = await request.json()
 
-    # Verify signature first (before handling any payload)
+    # Verify signature first (before parsing JSON)
     timestamp = request.headers.get("x-slack-request-timestamp", "")
     signature = request.headers.get("x-slack-signature", "")
     if not verify_slack_signature(body, timestamp, signature):
         logger.warning("Invalid Slack signature")
         return Response(status_code=401)
+
+    try:
+        payload = json.loads(body)
+    except (json.JSONDecodeError, ValueError):
+        return Response(status_code=400)
 
     # Handle Slack URL verification challenge (after signature is verified)
     if payload.get("type") == "url_verification":
