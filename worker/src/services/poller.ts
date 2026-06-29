@@ -44,15 +44,16 @@ async function handleStatusTransition(
 ): Promise<void> {
   const previousStatus = job.last_status;
   const hasSlack = Boolean(job.slack_channel && job.slack_message_ts);
-
-  // Update last_status always
-  await updateJob(env.DB, job.id, { last_status: session.status });
-
   const terminalStates = ["finished", "stopped", "error"];
 
   // Determine and apply status changes (independent of Slack)
+  // last_status is updated atomically with each status change to prevent
+  // lost transitions if a subsequent operation fails
   if (session.status === "blocked" && previousStatus !== "blocked") {
-    await updateJob(env.DB, job.id, { status: "blocked" });
+    await updateJob(env.DB, job.id, {
+      status: "blocked",
+      last_status: session.status,
+    });
     if (hasSlack) {
       await postThreadReply(
         env,
@@ -65,7 +66,10 @@ async function handleStatusTransition(
     previousStatus === "blocked" &&
     !terminalStates.includes(session.status)
   ) {
-    await updateJob(env.DB, job.id, { status: "in_progress" });
+    await updateJob(env.DB, job.id, {
+      status: "in_progress",
+      last_status: session.status,
+    });
     if (hasSlack) {
       await postThreadReply(
         env,
@@ -74,13 +78,12 @@ async function handleStatusTransition(
         "▶️ Session has resumed"
       );
     }
-  }
-
-  if (session.status === "finished" || session.status === "stopped") {
+  } else if (session.status === "finished" || session.status === "stopped") {
     if (session.pull_request_url) {
       await updateJob(env.DB, job.id, {
         status: "completed",
         pr_url: session.pull_request_url,
+        last_status: session.status,
       });
       if (hasSlack) {
         const mention = job.triggered_by?.startsWith("slack_user:")
@@ -95,7 +98,10 @@ async function handleStatusTransition(
         );
       }
     } else {
-      await updateJob(env.DB, job.id, { status: "finished_no_pr" });
+      await updateJob(env.DB, job.id, {
+        status: "finished_no_pr",
+        last_status: session.status,
+      });
       if (hasSlack) {
         await postThreadReply(
           env,
@@ -109,6 +115,7 @@ async function handleStatusTransition(
     await updateJob(env.DB, job.id, {
       status: "failed",
       error_message: "Session ended with error",
+      last_status: session.status,
     });
     if (hasSlack) {
       await postThreadReply(
@@ -118,6 +125,9 @@ async function handleStatusTransition(
         `❌ Remediation failed for issue #${job.issue_number}. React with 🚀 again to retry.`
       );
     }
+  } else {
+    // Non-terminal, non-blocked status change — just track it
+    await updateJob(env.DB, job.id, { last_status: session.status });
   }
 }
 

@@ -111,13 +111,13 @@ export async function getJobStats(db: D1Database): Promise<JobStats> {
     .prepare(
       `SELECT
         COUNT(*) as total,
-        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
-        SUM(CASE WHEN status = 'in_progress' THEN 1 ELSE 0 END) as in_progress,
-        SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
-        SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed,
-        SUM(CASE WHEN status = 'blocked' THEN 1 ELSE 0 END) as blocked,
-        SUM(CASE WHEN status = 'timed_out' THEN 1 ELSE 0 END) as timed_out,
-        SUM(CASE WHEN pr_url IS NOT NULL THEN 1 ELSE 0 END) as prs_created
+        COALESCE(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), 0) as pending,
+        COALESCE(SUM(CASE WHEN status = 'in_progress' THEN 1 ELSE 0 END), 0) as in_progress,
+        COALESCE(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END), 0) as completed,
+        COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0) as failed,
+        COALESCE(SUM(CASE WHEN status = 'blocked' THEN 1 ELSE 0 END), 0) as blocked,
+        COALESCE(SUM(CASE WHEN status = 'timed_out' THEN 1 ELSE 0 END), 0) as timed_out,
+        COALESCE(SUM(CASE WHEN pr_url IS NOT NULL THEN 1 ELSE 0 END), 0) as prs_created
       FROM jobs`
     )
     .first<JobStats>();
@@ -166,24 +166,25 @@ export async function checkIdempotency(
   key: string,
   ttlSeconds: number = 300
 ): Promise<boolean> {
-  const cutoff = Math.floor(Date.now() / 1000) - ttlSeconds;
+  const now = Math.floor(Date.now() / 1000);
+  const cutoff = now - ttlSeconds;
 
-  const existing = await db
-    .prepare("SELECT key FROM idempotency WHERE key = ? AND created_at > ?")
-    .bind(key, cutoff)
-    .first();
-
-  if (existing) return true;
-
-  // Insert (upsert)
+  // Clean expired entries for this key first
   await db
-    .prepare(
-      "INSERT OR REPLACE INTO idempotency (key, created_at) VALUES (?, ?)"
-    )
-    .bind(key, Math.floor(Date.now() / 1000))
+    .prepare("DELETE FROM idempotency WHERE key = ? AND created_at <= ?")
+    .bind(key, cutoff)
     .run();
 
-  return false;
+  // Atomic insert — if key already exists, INSERT OR IGNORE does nothing
+  const result = await db
+    .prepare(
+      "INSERT OR IGNORE INTO idempotency (key, created_at) VALUES (?, ?)"
+    )
+    .bind(key, now)
+    .run();
+
+  // If no rows were inserted, the key already existed (duplicate)
+  return result.meta.changes === 0;
 }
 
 export async function cleanupIdempotency(db: D1Database): Promise<void> {
