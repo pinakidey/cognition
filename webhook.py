@@ -6,9 +6,9 @@ import time
 
 from fastapi import APIRouter, Request, Response
 
-from app.config import settings
-from app.remediation import trigger_remediation
-from app.slack_client import get_message_attachments, get_message_text
+from config import settings
+from remediation import trigger_remediation
+from slack_client import get_message_attachments, get_message_text
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -139,7 +139,7 @@ async def handle_reaction_added(event: dict) -> None:
     )
 
     if not result["ok"]:
-        from app.slack_client import post_thread_reply
+        from slack_client import post_thread_reply
         await post_thread_reply(
             channel,
             message_ts,

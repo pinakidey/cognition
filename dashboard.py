@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
-from app.database import get_all_jobs, get_job_stats
+from database import get_all_jobs, get_job_stats
 
 router = APIRouter()
 
