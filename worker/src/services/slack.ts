@@ -5,7 +5,7 @@ const SLACK_API = "https://slack.com/api";
 async function slackApi(
   env: Env,
   method: string,
-  params: Record<string, string>
+  params: Record<string, string | number | boolean>
 ): Promise<Record<string, unknown>> {
   const response = await fetch(`${SLACK_API}/${method}`, {
     method: "POST",
@@ -26,8 +26,8 @@ export async function getMessageText(
   const result = await slackApi(env, "conversations.history", {
     channel,
     latest: messageTs,
-    inclusive: "true",
-    limit: "1",
+    inclusive: true,
+    limit: 1,
   });
 
   if (!result.ok) return "";
@@ -44,8 +44,8 @@ export async function getMessageAttachments(
   const result = await slackApi(env, "conversations.history", {
     channel,
     latest: messageTs,
-    inclusive: "true",
-    limit: "1",
+    inclusive: true,
+    limit: 1,
   });
 
   if (!result.ok) return [];

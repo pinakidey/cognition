@@ -5,20 +5,21 @@ export async function verifySlackSignature(
   c: Context<{ Bindings: Env; Variables: { rawBody: string } }>,
   next: Next
 ): Promise<Response | void> {
-  const timestamp = c.req.header("x-slack-request-timestamp") ?? "";
-  const signature = c.req.header("x-slack-signature") ?? "";
-  const body = await c.req.text();
-
   if (!c.env.SLACK_SIGNING_SECRET) {
     console.warn("No SLACK_SIGNING_SECRET configured — rejecting request");
     return c.json({ error: "Not configured" }, 500);
   }
 
-  // Reject requests older than 5 minutes
+  const timestamp = c.req.header("x-slack-request-timestamp") ?? "";
+  const signature = c.req.header("x-slack-signature") ?? "";
+
+  // Reject requests older than 5 minutes (before reading body)
   const now = Math.floor(Date.now() / 1000);
   if (!timestamp || Math.abs(now - Number(timestamp)) > 300) {
     return c.json({ error: "Request too old" }, 403);
   }
+
+  const body = await c.req.text();
 
   // Compute HMAC-SHA256 signature
   const sigBasestring = `v0:${timestamp}:${body}`;

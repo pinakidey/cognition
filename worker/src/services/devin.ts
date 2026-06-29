@@ -28,6 +28,7 @@ async function devinFetch(
           await new Promise((r) => setTimeout(r, RETRY_DELAYS[attempt]));
           continue;
         }
+        throw lastError;
       }
 
       return response;

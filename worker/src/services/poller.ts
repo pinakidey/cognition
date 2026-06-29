@@ -43,67 +43,75 @@ async function handleStatusTransition(
   env: Env
 ): Promise<void> {
   const previousStatus = job.last_status;
+  const hasSlack = Boolean(job.slack_channel && job.slack_message_ts);
 
-  // Update last_status
+  // Update last_status always
   await updateJob(env.DB, job.id, { last_status: session.status });
 
-  // Post progress notifications to Slack thread
-  if (job.slack_channel && job.slack_message_ts) {
-    if (session.status === "blocked" && previousStatus !== "blocked") {
+  // Determine and apply status changes (independent of Slack)
+  if (session.status === "blocked" && previousStatus !== "blocked") {
+    await updateJob(env.DB, job.id, { status: "blocked" });
+    if (hasSlack) {
       await postThreadReply(
         env,
-        job.slack_channel,
-        job.slack_message_ts,
+        job.slack_channel!,
+        job.slack_message_ts!,
         "⏸️ Session is blocked and needs attention"
       );
-      await updateJob(env.DB, job.id, { status: "blocked" });
-    } else if (previousStatus === "blocked" && session.status !== "blocked") {
+    }
+  } else if (previousStatus === "blocked" && session.status !== "blocked") {
+    await updateJob(env.DB, job.id, { status: "in_progress" });
+    if (hasSlack) {
       await postThreadReply(
         env,
-        job.slack_channel,
-        job.slack_message_ts,
+        job.slack_channel!,
+        job.slack_message_ts!,
         "▶️ Session has resumed"
       );
-      await updateJob(env.DB, job.id, { status: "in_progress" });
     }
+  }
 
-    if (session.status === "finished" || session.status === "stopped") {
-      if (session.pull_request_url) {
-        // PR created — success!
+  if (session.status === "finished" || session.status === "stopped") {
+    if (session.pull_request_url) {
+      await updateJob(env.DB, job.id, {
+        status: "completed",
+        pr_url: session.pull_request_url,
+      });
+      if (hasSlack) {
         const mention = job.triggered_by?.startsWith("slack_user:")
           ? await getUserMention(job.triggered_by.replace("slack_user:", ""))
           : "";
         const mentionText = mention ? ` ${mention} — ready for your review.` : "";
         await postThreadReply(
           env,
-          job.slack_channel,
-          job.slack_message_ts,
+          job.slack_channel!,
+          job.slack_message_ts!,
           `✅ PR ready for issue #${job.issue_number}: ${session.pull_request_url}${mentionText}`
         );
-        await updateJob(env.DB, job.id, {
-          status: "completed",
-          pr_url: session.pull_request_url,
-        });
-      } else {
+      }
+    } else {
+      await updateJob(env.DB, job.id, { status: "finished_no_pr" });
+      if (hasSlack) {
         await postThreadReply(
           env,
-          job.slack_channel,
-          job.slack_message_ts,
+          job.slack_channel!,
+          job.slack_message_ts!,
           `⚠️ Session finished for issue #${job.issue_number} without creating a PR.`
         );
-        await updateJob(env.DB, job.id, { status: "finished_no_pr" });
       }
-    } else if (session.status === "error") {
+    }
+  } else if (session.status === "error") {
+    await updateJob(env.DB, job.id, {
+      status: "failed",
+      error_message: "Session ended with error",
+    });
+    if (hasSlack) {
       await postThreadReply(
         env,
-        job.slack_channel,
-        job.slack_message_ts,
+        job.slack_channel!,
+        job.slack_message_ts!,
         `❌ Remediation failed for issue #${job.issue_number}. React with 🚀 again to retry.`
       );
-      await updateJob(env.DB, job.id, {
-        status: "failed",
-        error_message: "Session ended with error",
-      });
     }
   }
 }
