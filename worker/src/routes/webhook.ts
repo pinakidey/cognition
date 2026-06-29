@@ -35,7 +35,7 @@ function extractGithubIssueUrl(
   return null;
 }
 
-app.post("/webhook/slack", checkRateLimit, verifySlackSignature, async (c) => {
+app.post("/webhook/slack", verifySlackSignature, checkRateLimit, async (c) => {
   const body = c.get("rawBody");
   const payload: SlackEventPayload = JSON.parse(body);
 

@@ -48,6 +48,8 @@ async function handleStatusTransition(
   // Update last_status always
   await updateJob(env.DB, job.id, { last_status: session.status });
 
+  const terminalStates = ["finished", "stopped", "error"];
+
   // Determine and apply status changes (independent of Slack)
   if (session.status === "blocked" && previousStatus !== "blocked") {
     await updateJob(env.DB, job.id, { status: "blocked" });
@@ -59,7 +61,10 @@ async function handleStatusTransition(
         "⏸️ Session is blocked and needs attention"
       );
     }
-  } else if (previousStatus === "blocked" && session.status !== "blocked") {
+  } else if (
+    previousStatus === "blocked" &&
+    !terminalStates.includes(session.status)
+  ) {
     await updateJob(env.DB, job.id, { status: "in_progress" });
     if (hasSlack) {
       await postThreadReply(
