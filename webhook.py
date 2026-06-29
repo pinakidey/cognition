@@ -107,55 +107,71 @@ async def slack_webhook(request: Request) -> Response:
 
 async def handle_reaction_added(event: dict) -> None:
     """Handle a reaction_added event — trigger remediation on :rocket:."""
-    reaction = event.get("reaction", "")
-    if reaction != ROCKET_EMOJI:
-        return
+    channel = ""
+    message_ts = ""
+    try:
+        reaction = event.get("reaction", "")
+        if reaction != ROCKET_EMOJI:
+            return
 
-    channel = event.get("item", {}).get("channel", "")
-    message_ts = event.get("item", {}).get("ts", "")
-    user = event.get("user", "unknown")
+        channel = event.get("item", {}).get("channel", "")
+        message_ts = event.get("item", {}).get("ts", "")
+        user = event.get("user", "unknown")
 
-    if not channel or not message_ts:
-        logger.warning("reaction_added event missing channel or ts")
-        return
+        if not channel or not message_ts:
+            logger.warning("reaction_added event missing channel or ts")
+            return
 
-    # Reject if no channel is configured (fail closed)
-    if not settings.slack_channel_id:
-        logger.warning("SLACK_CHANNEL_ID not configured — ignoring all reactions")
-        return
+        # Reject if no channel is configured (fail closed)
+        if not settings.slack_channel_id:
+            logger.warning("SLACK_CHANNEL_ID not configured — ignoring all reactions")
+            return
 
-    # Only process reactions from the configured channel
-    if channel != settings.slack_channel_id:
-        logger.info("Ignoring reaction from non-configured channel %s", channel)
-        return
+        # Only process reactions from the configured channel
+        if channel != settings.slack_channel_id:
+            logger.info("Ignoring reaction from non-configured channel %s", channel)
+            return
 
-    logger.info(
-        "Rocket reaction by %s on message %s in channel %s",
-        user, message_ts, channel,
-    )
-
-    # Fetch the message to extract GitHub issue URL
-    text = await get_message_text(channel, message_ts)
-    attachments = await get_message_attachments(channel, message_ts)
-    issue_url = extract_github_issue_url(text, attachments)
-
-    if not issue_url:
-        logger.info("No GitHub issue URL found in message %s", message_ts)
-        return
-
-    logger.info("Found issue URL: %s — triggering remediation", issue_url)
-
-    result = await trigger_remediation(
-        issue_url=issue_url,
-        triggered_by=f"slack_user:{user}",
-        slack_channel=channel,
-        slack_message_ts=message_ts,
-    )
-
-    if not result["ok"]:
-        from slack_client import post_thread_reply
-        await post_thread_reply(
-            channel,
-            message_ts,
-            f"⚠️ Could not start remediation: {result['error']}",
+        logger.info(
+            "Rocket reaction by %s on message %s in channel %s",
+            user, message_ts, channel,
         )
+
+        # Fetch the message to extract GitHub issue URL
+        text = await get_message_text(channel, message_ts)
+        attachments = await get_message_attachments(channel, message_ts)
+        issue_url = extract_github_issue_url(text, attachments)
+
+        if not issue_url:
+            logger.info("No GitHub issue URL found in message %s", message_ts)
+            return
+
+        logger.info("Found issue URL: %s — triggering remediation", issue_url)
+
+        result = await trigger_remediation(
+            issue_url=issue_url,
+            triggered_by=f"slack_user:{user}",
+            slack_channel=channel,
+            slack_message_ts=message_ts,
+        )
+
+        if not result["ok"]:
+            from slack_client import post_thread_reply
+            await post_thread_reply(
+                channel,
+                message_ts,
+                f"⚠️ Could not start remediation: {result['error']}",
+            )
+
+    except Exception:
+        logger.exception("Unhandled error in handle_reaction_added")
+        if channel and message_ts:
+            try:
+                from slack_client import post_thread_reply
+                await post_thread_reply(
+                    channel,
+                    message_ts,
+                    "❌ An internal error occurred while processing this reaction. Please try again.",
+                )
+            except Exception:
+                logger.exception("Failed to send error notification to Slack")
