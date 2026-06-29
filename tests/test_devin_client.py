@@ -60,17 +60,42 @@ async def test_create_session_no_tags(monkeypatch):
 
 
 @respx.mock
-async def test_create_session_api_error(monkeypatch):
-    """Raises on API error."""
+async def test_create_session_api_error_after_retries(monkeypatch):
+    """Raises after exhausting all retry attempts."""
     monkeypatch.setattr("app.config.settings.devin_api_key", "apk_test")
     monkeypatch.setattr("app.config.settings.devin_api_base", "https://api.devin.ai/v1")
+    monkeypatch.setattr("app.config.settings.max_retry_attempts", 3)
+    monkeypatch.setattr("app.config.settings.retry_base_delay_seconds", 0)
 
     respx.post("https://api.devin.ai/v1/sessions").mock(
-        return_value=httpx.Response(401, json={"error": "Unauthorized"})
+        return_value=httpx.Response(500, json={"error": "Server Error"})
     )
 
     with pytest.raises(httpx.HTTPStatusError):
         await create_session(prompt="Test")
+
+    # Should have tried 3 times
+    assert len(respx.calls) == 3
+
+
+@respx.mock
+async def test_create_session_retries_then_succeeds(monkeypatch):
+    """Succeeds on retry after transient failure."""
+    monkeypatch.setattr("app.config.settings.devin_api_key", "apk_test")
+    monkeypatch.setattr("app.config.settings.devin_api_base", "https://api.devin.ai/v1")
+    monkeypatch.setattr("app.config.settings.max_retry_attempts", 3)
+    monkeypatch.setattr("app.config.settings.retry_base_delay_seconds", 0)
+
+    route = respx.post("https://api.devin.ai/v1/sessions")
+    route.side_effect = [
+        httpx.Response(503, json={"error": "Unavailable"}),
+        httpx.Response(200, json={"session_id": "sess-retry", "url": "https://app.devin.ai/sessions/sess-retry"}),
+    ]
+
+    result = await create_session(prompt="Retry test")
+
+    assert result["session_id"] == "sess-retry"
+    assert len(respx.calls) == 2
 
 
 @respx.mock

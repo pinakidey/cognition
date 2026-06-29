@@ -1,3 +1,4 @@
+import asyncio
 import httpx
 import logging
 
@@ -12,7 +13,7 @@ HEADERS = {
 
 
 async def create_session(prompt: str, tags: list[str] | None = None) -> dict:
-    """Create a new Devin session via the API."""
+    """Create a new Devin session via the API with exponential backoff retry."""
     payload: dict = {
         "prompt": prompt,
         "max_acu_limit": settings.devin_max_acu,
@@ -20,16 +21,35 @@ async def create_session(prompt: str, tags: list[str] | None = None) -> dict:
     if tags:
         payload["tags"] = tags
 
-    async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.post(
-            f"{settings.devin_api_base}/sessions",
-            headers=HEADERS,
-            json=payload,
-        )
-        response.raise_for_status()
-        data = response.json()
-        logger.info("Created Devin session: %s", data.get("session_id"))
-        return data
+    last_error: Exception | None = None
+    for attempt in range(1, settings.max_retry_attempts + 1):
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                response = await client.post(
+                    f"{settings.devin_api_base}/sessions",
+                    headers=HEADERS,
+                    json=payload,
+                )
+                response.raise_for_status()
+                data = response.json()
+                logger.info("Created Devin session: %s (attempt %d)", data.get("session_id"), attempt)
+                return data
+        except (httpx.HTTPStatusError, httpx.RequestError) as e:
+            last_error = e
+            if attempt < settings.max_retry_attempts:
+                delay = settings.retry_base_delay_seconds * (2 ** (attempt - 1))
+                logger.warning(
+                    "Devin API request failed (attempt %d/%d), retrying in %ds: %s",
+                    attempt, settings.max_retry_attempts, delay, str(e),
+                )
+                await asyncio.sleep(delay)
+            else:
+                logger.error(
+                    "Devin API request failed after %d attempts: %s",
+                    settings.max_retry_attempts, str(e),
+                )
+
+    raise last_error  # type: ignore[misc]
 
 
 async def get_session(session_id: str) -> dict:

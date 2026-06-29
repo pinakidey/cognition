@@ -98,6 +98,20 @@ async def update_job(job_id: int, **kwargs: str | None) -> None:
         await db.close()
 
 
+async def get_job_by_id(job_id: int) -> dict | None:
+    """Get a job by its ID."""
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT * FROM remediation_jobs WHERE id = ?",
+            (job_id,),
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+    finally:
+        await db.close()
+
+
 async def get_job_by_issue_url(issue_url: str) -> dict | None:
     """Get the most recent job for an issue URL."""
     db = await get_db()

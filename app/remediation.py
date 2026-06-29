@@ -86,6 +86,7 @@ async def _do_trigger_remediation(
 ) -> dict:
     """Inner implementation, called under per-issue lock."""
     # Check for duplicate active jobs (includes blocked)
+    # Allow re-triggering after failure, timeout, or completion
     existing = await get_job_by_issue_url(issue_url)
     if existing and existing["status"] in ("pending", "in_progress", "blocked"):
         return {

@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     db_path: str = "./data/jobs.db"
     poll_interval_seconds: int = 30
 
+    # Retry & Failsafe
+    max_retry_attempts: int = 3
+    retry_base_delay_seconds: int = 5
+    job_timeout_minutes: int = 60
+
     model_config = {"env_file": ".env", "extra": "ignore"}
 
 

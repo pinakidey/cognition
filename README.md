@@ -232,6 +232,37 @@ Each remediation session posts intermittent progress updates in the original Sla
 
 Each status transition is reported exactly once (deduplication via `last_notified_status` tracking). Engineers get real-time visibility without leaving Slack.
 
+When a PR is ready, the notification @-mentions the engineer who reacted with 🚀 to start the remediation, so they get a direct ping to review.
+
+### Failsafes & Retries
+
+| Mechanism | Behavior | Configuration |
+|-----------|----------|---------------|
+| **Devin API retry** | Exponential backoff on session creation (5s → 10s → 20s) | `MAX_RETRY_ATTEMPTS` (default: 3), `RETRY_BASE_DELAY_SECONDS` (default: 5) |
+| **Stale job timeout** | Jobs exceeding threshold are marked `timed_out` with Slack notification | `JOB_TIMEOUT_MINUTES` (default: 60) |
+| **Manual retry endpoint** | `POST /retry/{job_id}` re-triggers failed/timed-out jobs | Only accepts `failed`, `timed_out`, `finished_no_pr` statuses |
+| **Slack retry hints** | Failure/timeout messages include "React with 🚀 again to retry" | Automatic on failure |
+
+**Retry flow:**
+```
+Devin API call fails → backoff 5s → retry → backoff 10s → retry → raise error
+                                                                       ↓
+                                                            Job marked "failed"
+                                                                       ↓
+                                                 Slack: "❌ Failed. React 🚀 to retry"
+                                                                       ↓
+                                              Engineer reacts → new session created
+```
+
+**Stale job detection:**
+```
+Job created → 60 min elapsed with no completion
+                       ↓
+            Poller marks job "timed_out"
+                       ↓
+         Slack: "⏰ Timed out. React 🚀 to retry"
+```
+
 ## Docker Image Details
 
 - **Base**: `python:3.12-slim` (multi-stage build)
