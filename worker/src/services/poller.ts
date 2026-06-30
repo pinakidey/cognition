@@ -4,6 +4,7 @@ import { getSession } from "./devin";
 import { postThreadReply, getUserMention } from "./slack";
 
 const STALE_TIMEOUT_MS = 60 * 60 * 1000; // 60 minutes
+const PROGRESS_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
 export async function pollActiveSessions(env: Env): Promise<void> {
   const activeJobs = await getActiveJobs(env.DB);
@@ -28,10 +29,12 @@ async function pollSingleJob(job: Job, env: Env): Promise<void> {
 
     const session = await getSession(env, job.session_id);
 
-    // Only act on status transitions
-    if (session.status === job.last_status) return;
-
-    await handleStatusTransition(job, session, env);
+    if (session.status !== job.last_status) {
+      await handleStatusTransition(job, session, env);
+    } else {
+      // No transition — post periodic progress update every 5 minutes
+      await maybePostProgressUpdate(job, session, env);
+    }
   } catch (err) {
     console.error(`Error polling job ${job.id}:`, err);
   }
@@ -125,23 +128,50 @@ async function handleStatusTransition(
         `❌ Remediation failed for issue #${job.issue_number}. React with 🚀 again to retry.`
       );
     }
-  } else if (
-    session.status === "running" &&
-    previousStatus !== "running"
-  ) {
-    await updateJob(env.DB, job.id, { last_status: session.status });
-    if (hasSlack) {
-      await postThreadReply(
-        env,
-        job.slack_channel!,
-        job.slack_message_ts!,
-        `🔧 Devin is actively working on the fix for issue #${job.issue_number}...`
-      );
-    }
   } else {
     // Non-terminal, non-blocked status change — just track it
     await updateJob(env.DB, job.id, { last_status: session.status });
   }
+}
+
+function formatStatusEmoji(status: string): string {
+  switch (status) {
+    case "running":
+      return "🔧";
+    case "blocked":
+      return "⏸️";
+    default:
+      return "🔄";
+  }
+}
+
+function getElapsedMinutes(updatedAt: string): number {
+  return Math.floor((Date.now() - new Date(updatedAt).getTime()) / 60000);
+}
+
+async function maybePostProgressUpdate(
+  job: Job,
+  session: { status: string; pull_request_url?: string },
+  env: Env
+): Promise<void> {
+  const elapsed = Date.now() - new Date(job.updated_at).getTime();
+  if (elapsed < PROGRESS_INTERVAL_MS) return;
+
+  const hasSlack = Boolean(job.slack_channel && job.slack_message_ts);
+  if (!hasSlack) return;
+
+  const minutes = getElapsedMinutes(job.created_at);
+  const emoji = formatStatusEmoji(session.status);
+
+  await postThreadReply(
+    env,
+    job.slack_channel!,
+    job.slack_message_ts!,
+    `${emoji} Progress update (${minutes}min elapsed): Session status is *${session.status}* for issue #${job.issue_number}`
+  );
+
+  // Touch updated_at to reset the 5-minute timer
+  await updateJob(env.DB, job.id, { last_status: session.status });
 }
 
 async function markJobTimedOut(job: Job, env: Env): Promise<void> {
