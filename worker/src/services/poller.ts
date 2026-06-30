@@ -138,6 +138,17 @@ async function processPendingMerges(env: Env): Promise<void> {
       // Transient API error — treat like a caught exception (retry later)
       if (error) {
         await updatePendingMerge(env.DB, entry.id, "pending", true);
+        if (entry.attempts >= 29) {
+          await updatePendingMerge(env.DB, entry.id, "failed");
+          if (entry.slack_channel && entry.slack_message_ts) {
+            await postThreadReply(
+              env,
+              entry.slack_channel,
+              entry.slack_message_ts,
+              `⚠️ Auto-merge for PR #${entry.pr_number} failed — unable to verify CI status after repeated attempts. Please merge manually.`
+            );
+          }
+        }
         continue;
       }
 
@@ -217,6 +228,17 @@ async function processPendingMerges(env: Env): Promise<void> {
     } catch (err) {
       console.error(`Error processing pending merge for PR #${entry.pr_number}:`, err);
       await updatePendingMerge(env.DB, entry.id, "pending", true);
+      if (entry.attempts >= 29) {
+        await updatePendingMerge(env.DB, entry.id, "failed");
+        if (entry.slack_channel && entry.slack_message_ts) {
+          await postThreadReply(
+            env,
+            entry.slack_channel,
+            entry.slack_message_ts,
+            `⚠️ Auto-merge for PR #${entry.pr_number} failed after repeated errors. Please merge manually.`
+          );
+        }
+      }
     }
   }
 }

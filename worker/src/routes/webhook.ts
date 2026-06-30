@@ -397,14 +397,21 @@ async function handleApproval(
 
       // Auto-merge if all CI checks are passing
       try {
-        const { passing, sha } = await arePrChecksPassing(
+        const { passing, sha, merged: alreadyMerged } = await arePrChecksPassing(
           env,
           parsed.owner,
           parsed.repo,
           parsed.number
         );
 
-        if (passing && sha) {
+        if (alreadyMerged) {
+          await postThreadReply(
+            env,
+            channel,
+            messageTs,
+            `ℹ️ PR #${parsed.number} is already merged.`
+          );
+        } else if (passing && sha) {
           const merged = await mergePullRequest(
             env,
             parsed.owner,
