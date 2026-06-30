@@ -3,6 +3,7 @@ import { html } from "hono/html";
 import type { Env } from "../types";
 import { getAllJobs, getJobStats } from "../db/queries";
 import { getRecentAuditLogs } from "../db/audit";
+import { verifyAdminKey } from "../middleware/auth";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -118,7 +119,7 @@ app.get("/", async (c) => {
   return c.html(page);
 });
 
-app.get("/audit", async (c) => {
+app.get("/audit", verifyAdminKey, async (c) => {
   const logs = await getRecentAuditLogs(c.env.DB, 100);
   return c.json({ audit_log: logs });
 });
