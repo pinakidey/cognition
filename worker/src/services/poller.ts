@@ -125,6 +125,19 @@ async function handleStatusTransition(
         `❌ Remediation failed for issue #${job.issue_number}. React with 🚀 again to retry.`
       );
     }
+  } else if (
+    session.status === "running" &&
+    previousStatus !== "running"
+  ) {
+    await updateJob(env.DB, job.id, { last_status: session.status });
+    if (hasSlack) {
+      await postThreadReply(
+        env,
+        job.slack_channel!,
+        job.slack_message_ts!,
+        `🔧 Devin is actively working on the fix for issue #${job.issue_number}...`
+      );
+    }
   } else {
     // Non-terminal, non-blocked status change — just track it
     await updateJob(env.DB, job.id, { last_status: session.status });
