@@ -201,14 +201,18 @@ async function handleRemediation(
       slack_message_ts: messageTs,
     });
 
-    // Assign issue to the triggering user's GitHub account
-    const email = await getUserEmail(env, user);
+    // Assign issue to the triggering user's GitHub account (non-critical)
     let ghUsername: string | null = null;
-    if (email) {
-      ghUsername = await findGitHubUserByEmail(env, email);
-      if (ghUsername) {
-        await assignIssue(env, parsed.owner, parsed.repo, parsed.number, ghUsername);
+    try {
+      const email = await getUserEmail(env, user);
+      if (email) {
+        ghUsername = await findGitHubUserByEmail(env, email);
+        if (ghUsername) {
+          await assignIssue(env, parsed.owner, parsed.repo, parsed.number, ghUsername);
+        }
       }
+    } catch (assignErr) {
+      console.error("Non-critical: issue assignment failed:", assignErr);
     }
 
     // Notify in thread

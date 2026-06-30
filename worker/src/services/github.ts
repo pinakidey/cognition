@@ -141,9 +141,9 @@ export async function assignIssue(
   assignee: string
 ): Promise<boolean> {
   const response = await fetch(
-    `${GITHUB_API}/repos/${owner}/${repo}/issues/${issueNumber}`,
+    `${GITHUB_API}/repos/${owner}/${repo}/issues/${issueNumber}/assignees`,
     {
-      method: "PATCH",
+      method: "POST",
       headers: {
         Authorization: `token ${env.GH_TOKEN}`,
         Accept: "application/vnd.github.v3+json",
