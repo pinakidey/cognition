@@ -17,11 +17,22 @@ function extractGithubIssueUrl(
 ): string | null {
   const pattern = /https:\/\/github\.com\/[^/]+\/[^/]+\/issues\/\d+/;
 
-  // Try message text first
+  // Try attachment title first — GitHub's Slack integration puts the
+  // actual issue URL in the title field (e.g. "<url|#21 Title>").
+  // This must be checked before text/fallback which may reference other issues.
+  if (attachments) {
+    for (const att of attachments) {
+      const title = att["title"] ?? "";
+      const titleMatch = title.match(pattern);
+      if (titleMatch) return titleMatch[0];
+    }
+  }
+
+  // Try message text
   const match = text.match(pattern);
   if (match) return match[0];
 
-  // Try attachments
+  // Try other attachment fields as fallback
   if (attachments) {
     for (const att of attachments) {
       for (const field of ["title_link", "fallback", "text"]) {
