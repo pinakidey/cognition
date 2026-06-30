@@ -82,14 +82,21 @@ export async function getSession(
     structured_output?: {
       pull_request_url?: string;
     };
+    pull_requests?: Array<{ url: string }>;
     title?: string;
   };
+
+  // Check structured_output first, then pull_requests array
+  const prUrl =
+    data.structured_output?.pull_request_url ??
+    data.pull_requests?.[0]?.url ??
+    undefined;
 
   return {
     session_id: data.session_id,
     status: data.status,
     url: data.url,
-    pull_request_url: data.structured_output?.pull_request_url,
+    pull_request_url: prUrl,
     title: data.title,
   };
 }

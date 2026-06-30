@@ -29,6 +29,12 @@ async function pollSingleJob(job: Job, env: Env): Promise<void> {
 
     const session = await getSession(env, job.session_id);
 
+    // PR detected while session is still running — treat as completed
+    if (session.pull_request_url && !job.pr_url) {
+      await markJobCompleted(job, session.pull_request_url, env);
+      return;
+    }
+
     if (session.status !== job.last_status) {
       await handleStatusTransition(job, session, env);
     } else {
@@ -82,37 +88,19 @@ async function handleStatusTransition(
       );
     }
   } else if (session.status === "finished" || session.status === "stopped") {
-    if (session.pull_request_url) {
-      await updateJob(env.DB, job.id, {
-        status: "completed",
-        pr_url: session.pull_request_url,
-        last_status: session.status,
-      });
-      if (hasSlack) {
-        const mention = job.triggered_by?.startsWith("slack_user:")
-          ? await getUserMention(job.triggered_by.replace("slack_user:", ""))
-          : "";
-        const mentionText = mention ? ` ${mention} — ready for your review.` : "";
-        await postThreadReply(
-          env,
-          job.slack_channel!,
-          job.slack_message_ts!,
-          `✅ PR ready for issue #${job.issue_number}: ${session.pull_request_url}${mentionText}`
-        );
-      }
-    } else {
-      await updateJob(env.DB, job.id, {
-        status: "finished_no_pr",
-        last_status: session.status,
-      });
-      if (hasSlack) {
-        await postThreadReply(
-          env,
-          job.slack_channel!,
-          job.slack_message_ts!,
-          `⚠️ Session finished for issue #${job.issue_number} without creating a PR.`
-        );
-      }
+    // PR case is already handled by markJobCompleted above (early return)
+    // This path only runs if session ended without a PR
+    await updateJob(env.DB, job.id, {
+      status: "finished_no_pr",
+      last_status: session.status,
+    });
+    if (hasSlack) {
+      await postThreadReply(
+        env,
+        job.slack_channel!,
+        job.slack_message_ts!,
+        `⚠️ Session finished for issue #${job.issue_number} without creating a PR.`
+      );
     }
   } else if (session.status === "error") {
     await updateJob(env.DB, job.id, {
@@ -131,6 +119,38 @@ async function handleStatusTransition(
   } else {
     // Non-terminal, non-blocked status change — just track it
     await updateJob(env.DB, job.id, { last_status: session.status });
+  }
+}
+
+async function markJobCompleted(
+  job: Job,
+  prUrl: string,
+  env: Env
+): Promise<void> {
+  await updateJob(env.DB, job.id, {
+    status: "completed",
+    pr_url: prUrl,
+    last_status: "finished",
+  });
+
+  if (job.slack_channel && job.slack_message_ts) {
+    const triggeredBy = job.triggered_by ?? "";
+    // Only @-mention if triggered by a human (not a bot)
+    let mentionText = "";
+    if (triggeredBy.startsWith("slack_user:")) {
+      const userId = triggeredBy.replace("slack_user:", "");
+      const mention = await getUserMention(userId);
+      if (mention) {
+        mentionText = ` ${mention} — ready for your review.`;
+      }
+    }
+
+    await postThreadReply(
+      env,
+      job.slack_channel,
+      job.slack_message_ts,
+      `✅ PR ready for issue #${job.issue_number}: ${prUrl}${mentionText}`
+    );
   }
 }
 
