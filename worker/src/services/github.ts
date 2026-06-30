@@ -197,7 +197,7 @@ export async function arePrChecksPassing(
   owner: string,
   repo: string,
   prNumber: number
-): Promise<{ passing: boolean; sha: string | null }> {
+): Promise<{ passing: boolean; sha: string | null; merged?: boolean }> {
   // Get the PR to find the head SHA
   const prResponse = await githubFetch(
     env,
@@ -205,7 +205,12 @@ export async function arePrChecksPassing(
   );
   if (!prResponse.ok) return { passing: false, sha: null };
 
-  const pr = (await prResponse.json()) as { head: { sha: string } };
+  const pr = (await prResponse.json()) as { head: { sha: string }; state: string; merged: boolean };
+
+  // Short-circuit if PR is already merged or closed
+  if (pr.merged) return { passing: true, sha: pr.head.sha, merged: true };
+  if (pr.state === "closed") return { passing: false, sha: null, merged: false };
+
   const sha = pr.head.sha;
 
   // Check combined status
@@ -220,7 +225,7 @@ export async function arePrChecksPassing(
   // Also check check-runs (GitHub Actions use check-runs, not statuses)
   const checksResponse = await githubFetch(
     env,
-    `/repos/${owner}/${repo}/commits/${sha}/check-runs`
+    `/repos/${owner}/${repo}/commits/${sha}/check-runs?per_page=100`
   );
 
   if (!checksResponse.ok) return { passing: false, sha };
@@ -232,6 +237,10 @@ export async function arePrChecksPassing(
 
   // If there are check runs, all must be completed and successful
   if (checks.total_count > 0) {
+    // Guard against pagination: if we didn't fetch all checks, assume not passing
+    if (checks.check_runs.length < checks.total_count) {
+      return { passing: false, sha };
+    }
     const allPassed = checks.check_runs.every(
       (cr) => cr.status === "completed" && (cr.conclusion === "success" || cr.conclusion === "neutral" || cr.conclusion === "skipped")
     );

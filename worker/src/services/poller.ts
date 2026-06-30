@@ -128,12 +128,32 @@ async function processPendingMerges(env: Env): Promise<void> {
 
   for (const entry of pending) {
     try {
-      const { passing, sha } = await arePrChecksPassing(
+      const { passing, sha, merged: alreadyMerged } = await arePrChecksPassing(
         env,
         entry.owner,
         entry.repo,
         entry.pr_number
       );
+
+      // PR was already merged (manually or by another process)
+      if (alreadyMerged) {
+        await updatePendingMerge(env.DB, entry.id, "merged");
+        continue;
+      }
+
+      // PR was closed without merging
+      if (!sha) {
+        await updatePendingMerge(env.DB, entry.id, "failed");
+        if (entry.slack_channel && entry.slack_message_ts) {
+          await postThreadReply(
+            env,
+            entry.slack_channel,
+            entry.slack_message_ts,
+            `ℹ️ PR #${entry.pr_number} was closed — auto-merge cancelled.`
+          );
+        }
+        continue;
+      }
 
       if (passing && sha) {
         const merged = await mergePullRequest(
