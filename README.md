@@ -10,21 +10,45 @@ A daily scanner finds issues in the target repo and creates GitHub issues. These
 
 ## Tech Stack
 
+### Production (Cloudflare Workers)
+
+| Layer | Technology | Purpose |
+|-------|-----------|---------|
+| Framework | **Hono** (TypeScript) | Lightweight edge-native web framework |
+| Runtime | **Cloudflare Workers** (V8 isolates) | Serverless, global edge, permanent free tier |
+| Database | **D1** (Cloudflare serverless SQLite) | Job tracking, rate limiting, idempotency |
+| Scheduler | **Cron Triggers** (every 60s) | Session polling (replaces background loop) |
+| Messaging | **Slack** (Events API + Bot) | HITL trigger (🚀 reaction), progress notifications, thread replies |
+| AI Engine | **Devin API** | Creates and monitors automated fix sessions |
+| VCS | **GitHub API** | Issue validation, PR detection, issue comments |
+| CI/CD | **GitHub Actions** | Auto-deploy + secret sync on push to `sandbox` |
+| Testing | **Vitest** | Unit and integration tests |
+
+### Legacy (Fly.io — trial expired)
+
 | Layer | Technology | Purpose |
 |-------|-----------|---------|
 | Framework | **FastAPI** (Python 3.12) | Async web framework with OpenAPI support |
 | Server | **Uvicorn** | ASGI server with hot reload |
 | Database | **SQLite** (aiosqlite, WAL mode) | Persistent job tracking with connection pooling |
 | HTTP Client | **httpx** | Async HTTP for Devin, GitHub, and Slack APIs |
-| Messaging | **Slack** (Events API + Bot) | HITL trigger (🚀 reaction), progress notifications, thread replies |
-| AI Engine | **Devin API** | Creates and monitors automated fix sessions |
-| VCS | **GitHub API** | Issue validation, PR detection, issue comments |
 | Config | **Pydantic Settings** | Type-safe env var management |
 | Deployment | **Fly.io** (Docker) | Single-region container with persistent volume |
-| CI/CD | **GitHub Actions** | Auto-deploy + secret sync on push to main |
 | Containerization | **Docker** (multi-stage) | Non-root, minimal production image |
 
 ## Live Deployment
+
+### Cloudflare Workers (active)
+
+| Endpoint | URL | Auth |
+|----------|-----|------|
+| Dashboard | https://devin-remediation-service.pinakidey2006.workers.dev/ | Public |
+| Health Check | https://devin-remediation-service.pinakidey2006.workers.dev/health | Public |
+| Status API | https://devin-remediation-service.pinakidey2006.workers.dev/status | Public |
+| Slack Webhook | https://devin-remediation-service.pinakidey2006.workers.dev/webhook/slack | Slack signature |
+| Retry Job | https://devin-remediation-service.pinakidey2006.workers.dev/retry/{job_id} | `X-Admin-Key` |
+
+### Fly.io (legacy — trial expired)
 
 | Endpoint | URL | Auth |
 |----------|-----|------|
@@ -36,7 +60,7 @@ A daily scanner finds issues in the target repo and creates GitHub issues. These
 
 **Retry endpoint** (protected):
 ```bash
-curl -X POST -H "X-Admin-Key: <your-admin-key>" https://devin-remediation-service.fly.dev/retry/{job_id}
+curl -X POST -H "X-Admin-Key: <your-admin-key>" https://devin-remediation-service.pinakidey2006.workers.dev/retry/{job_id}
 ```
 
 ## Architecture
@@ -47,16 +71,20 @@ curl -X POST -H "X-Admin-Key: <your-admin-key>" https://devin-remediation-servic
         ▼ (Engineer reacts with 🚀)
 [Slack Events API → POST /webhook/slack]
         │
+        ├─ Slack signature verification (HMAC-SHA256)
+        ├─ Rate limiting (30 req/min per IP via D1)
+        ├─ Idempotency check (prevents duplicate processing)
         ├─ Extracts GitHub issue URL from message
         ├─ Validates: issue is open, no existing PR or active session
         ├─ Creates Devin session via API with tailored fix prompt
         ├─ Posts Slack thread reply: "🚀 Remediation started"
         │
-        ▼ (Background poller)
-[Polls Devin session status every 30s]
+        ▼ (Cron Trigger — every 60s)
+[Polls Devin session status via D1 + Devin API]
         │
-        ├─ On completion: updates GitHub issue + Slack thread with PR link
-        ├─ On failure: notifies in Slack thread
+        ├─ On completion: posts PR link in Slack thread (@-mentions triggering engineer)
+        ├─ On failure: notifies in Slack thread with retry hint
+        ├─ On timeout (60 min): marks stale, notifies
         │
         ▼
 [GET / — Observability Dashboard]
@@ -69,40 +97,46 @@ curl -X POST -H "X-Admin-Key: <your-admin-key>" https://devin-remediation-servic
 
 ```
 cognition/
-├── app/                          # Application source code
-│   ├── __init__.py
-│   ├── main.py                   # FastAPI app, lifespan, routes
-│   ├── config.py                 # Pydantic settings (env vars)
-│   ├── webhook.py                # Slack webhook handler + signature verification
-│   ├── remediation.py            # Trigger logic, deduplication, race conditions
-│   ├── poller.py                 # Background session status polling
-│   ├── database.py               # SQLite async CRUD (aiosqlite)
-│   ├── devin_client.py           # Devin API client
-│   ├── github_client.py          # GitHub API client
-│   ├── slack_client.py           # Slack API client
-│   ├── dashboard.py              # HTML dashboard + JSON status API
-│   ├── security.py              # Admin API key auth dependency
-│   └── rate_limit.py            # In-memory sliding window rate limiter
-├── tests/                        # Test suite (93 tests)
-│   ├── conftest.py               # Fixtures, DB setup, env overrides
-│   ├── test_config.py
-│   ├── test_database.py
-│   ├── test_webhook.py
-│   ├── test_remediation.py
-│   ├── test_poller.py
-│   ├── test_slack_client.py
-│   ├── test_github_client.py
-│   ├── test_devin_client.py
-│   ├── test_dashboard.py
-│   └── test_main.py
+├── worker/                        # Cloudflare Workers (TypeScript) — ACTIVE
+│   ├── src/
+│   │   ├── index.ts               # Hono app entry + Cron Trigger export
+│   │   ├── types.ts               # TypeScript interfaces (Env, Job, etc.)
+│   │   ├── db/
+│   │   │   ├── schema.sql         # D1 table definitions
+│   │   │   └── queries.ts         # Typed D1 query functions
+│   │   ├── routes/
+│   │   │   ├── webhook.ts         # POST /webhook/slack (reaction handler)
+│   │   │   ├── dashboard.ts       # GET / (HTML) + GET /status (JSON)
+│   │   │   ├── retry.ts           # POST /retry/{jobId} (manual retry)
+│   │   │   └── health.ts          # GET /health
+│   │   ├── services/
+│   │   │   ├── devin.ts           # Devin API client (with retry/backoff)
+│   │   │   ├── github.ts          # GitHub API client
+│   │   │   ├── slack.ts           # Slack API client
+│   │   │   └── poller.ts          # Session polling logic (Cron handler)
+│   │   └── middleware/
+│   │       ├── auth.ts            # Admin API key verification
+│   │       ├── slack-verify.ts    # Slack signature verification
+│   │       └── rate-limit.ts      # D1-backed rate limiting
+│   ├── test/                      # Vitest test suite (12 tests)
+│   ├── wrangler.toml              # Cloudflare config (D1 binding, cron)
+│   ├── package.json               # Dependencies (Hono, Vitest, Wrangler)
+│   └── tsconfig.json              # TypeScript strict mode
+├── app/                           # Python/FastAPI (legacy Fly.io)
+│   ├── main.py                    # FastAPI app, lifespan, routes
+│   ├── webhook.py                 # Slack webhook handler
+│   ├── poller.py                  # Background polling loop
+│   ├── database.py                # SQLite async CRUD
+│   └── ...                        # Other modules
+├── tests/                         # Python test suite (114 tests)
 ├── .github/workflows/
-│   └── deploy.yml                # CI: secret sync + Fly.io deploy
-├── Dockerfile
-├── fly.toml                      # Fly.io deployment config
-├── requirements.txt              # Production dependencies
-├── requirements-dev.txt          # Dev/test dependencies
-├── pytest.ini                    # Test configuration
-└── pyproject.toml                # Package metadata
+│   ├── deploy-cloudflare.yml      # CI: test + deploy to CF Workers (sandbox)
+│   └── deploy.yml                 # CI: deploy to Fly.io (main)
+├── doc/
+│   └── cloudflare-workers-migration-plan.md
+├── Dockerfile                     # Fly.io container
+├── fly.toml                       # Fly.io deployment config
+└── docker-compose.yml             # Local development
 ```
 
 ## Endpoints
@@ -110,10 +144,10 @@ cognition/
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | `POST` | `/webhook/slack` | Slack signature | Slack Events API handler (reaction_added) |
-| `GET` | `/` | Admin key | HTML observability dashboard |
-| `GET` | `/status` | Admin key | JSON API for metrics and job tracking |
-| `POST` | `/retry/{job_id}` | Admin key | Retry a failed/timed-out job |
-| `GET` | `/health` | None | Health check |
+| `GET` | `/` | Public | HTML observability dashboard |
+| `GET` | `/status` | Public | JSON API for metrics and job tracking |
+| `POST` | `/retry/{job_id}` | `X-Admin-Key` | Retry a failed/timed-out job |
+| `GET` | `/health` | Public | Health check |
 
 ## How It Works
 
@@ -123,33 +157,83 @@ cognition/
 4. **Engineer** reviews triage and reacts with 🚀 to approve remediation
 5. **This Service** receives the Slack event, validates the issue, and starts a Devin session
 6. **Devin** fixes the issue and creates a PR
-7. **Background Poller** detects PR creation and notifies GitHub + Slack
+7. **Cron Trigger** (every 60s) detects PR creation and notifies Slack thread with @-mention
 
 ## Configuration
 
-All configuration is via environment variables (managed as deployment/repo secrets):
+All configuration is via environment variables (set as Worker secrets or GitHub repo secrets):
 
 | Variable | Description |
 |----------|-------------|
 | `DEVIN_API_KEY` | Devin API key (service or personal) |
-| `DEVIN_API_BASE` | Devin API base URL (default: `https://api.devin.ai/v1`) |
-| `DEVIN_MAX_ACU` | Max ACUs per remediation session (default: 10) |
-| `GH_TOKEN` | GitHub PAT with repo access (`GITHUB_` prefix is reserved by GitHub Actions) |
+| `GH_TOKEN` | GitHub PAT with repo access |
 | `GITHUB_REPO` | Target repository (default: `pinakidey/superset`) |
 | `SLACK_BOT_TOKEN` | Slack Bot OAuth token |
 | `SLACK_SIGNING_SECRET` | Slack app signing secret for request verification |
 | `SLACK_CHANNEL_ID` | Channel ID for `#devin-report` (restricts which channel can trigger remediation) |
-| `DB_PATH` | SQLite database path (default: `./data/jobs.db`) |
-| `POLL_INTERVAL_SECONDS` | How often to poll active sessions (default: 30) |
-| `ADMIN_API_KEY` | API key for admin endpoints (empty = unrestricted) |
-| `RATE_LIMIT` | Webhook rate limit (default: `30/minute`) |
-| `MAX_RETRY_ATTEMPTS` | Max retry attempts for Devin API calls (default: 3) |
-| `RETRY_BASE_DELAY_SECONDS` | Base delay for exponential backoff (default: 5) |
-| `JOB_TIMEOUT_MINUTES` | Stale job timeout threshold (default: 60) |
+| `ADMIN_API_KEY` | API key for `/retry` endpoint (optional) |
+
+## Deployment
+
+### Cloudflare Workers (active)
+
+Deployed to Cloudflare's global edge network. GitHub Actions deploys on push to `sandbox`:
+
+```
+git push origin sandbox  →  GitHub Action  →  wrangler deploy  →  Live on CF edge
+```
+
+**Branches:**
+- `main` — production Python/Fly.io code (legacy)
+- `sandbox` — CF Workers deployment target
+
+**Initial setup (one-time, already done):**
+```bash
+npx wrangler d1 create remediation-db      # Create D1 database
+npx wrangler d1 execute remediation-db \    # Run schema migration
+  --remote --file=worker/src/db/schema.sql
+```
+
+### Fly.io (legacy — trial expired)
+
+Deployed to Fly.io (Tokyo/nrt region) with persistent volume for SQLite.
+GitHub Actions deploys on push to `main`.
+
+### Required GitHub Repo Secrets
+
+| Secret | Description | Used by |
+|--------|-------------|---------|
+| `CF_API_TOKEN` | Cloudflare API token (Workers + D1 Edit) | CF deploy |
+| `DEVIN_API_KEY` | Devin API key | Both |
+| `GH_TOKEN` | GitHub PAT | Both |
+| `SLACK_BOT_TOKEN` | Slack Bot OAuth token | Both |
+| `SLACK_SIGNING_SECRET` | Slack app signing secret | Both |
+| `SLACK_CHANNEL_ID` | Slack channel ID | Both |
+| `ADMIN_API_KEY` | Admin auth for retry endpoint | Both |
+| `FLY_TOKEN` | Fly.io personal access token | Fly.io only |
 
 ## Local Development
 
-### With Docker Compose (recommended)
+### Cloudflare Workers (recommended)
+
+```bash
+cd worker
+npm install
+
+# Run locally with Miniflare (D1 simulated)
+npx wrangler dev
+
+# Run tests
+npm test
+
+# Type check
+npm run lint
+
+# Deploy manually
+npx wrangler deploy
+```
+
+### With Docker Compose (Python/legacy)
 
 ```bash
 # Create a .env file with your secrets
@@ -171,79 +255,26 @@ docker compose logs -f
 docker compose down
 ```
 
-### With Docker directly
-
-```bash
-docker build -t devin-remediation-service .
-
-docker run --rm -p 8080:8080 \
-  -e DEVIN_API_KEY=... \
-  -e GH_TOKEN=... \
-  -e SLACK_BOT_TOKEN=... \
-  -e SLACK_SIGNING_SECRET=... \
-  -e SLACK_CHANNEL_ID=... \
-  -v remediation-data:/data \
-  devin-remediation-service
-```
-
-### Without Docker
-
-```bash
-pip install -r requirements-dev.txt
-
-export DEVIN_API_KEY=your_key
-export GH_TOKEN=your_token
-export SLACK_BOT_TOKEN=xoxb-...
-export SLACK_SIGNING_SECRET=...
-export SLACK_CHANNEL_ID=C0BE0NKLY3E
-
-uvicorn app.main:app --reload --port 8000
-```
-
 ### Running Tests
 
 ```bash
+# CF Workers (TypeScript)
+cd worker && npm test
+
+# Python (legacy)
 pip install -r requirements-dev.txt
-pytest
-pytest --cov=app --cov-report=term-missing  # with coverage
+pytest --cov=app --cov-report=term-missing
 ```
-
-## Deployment
-
-Deployed to Fly.io (Tokyo/nrt region) with persistent volume for SQLite.
-
-GitHub Actions automatically syncs secrets and deploys on push to `main`:
-
-```yaml
-# .github/workflows/deploy.yml
-# Triggers on push to main or workflow_dispatch
-# Reads secrets from GitHub repo secrets → sets on Fly.io → deploys
-```
-
-### Required GitHub Repo Secrets
-
-| Secret | Description |
-|--------|-------------|
-| `DEVIN_API_KEY` | Devin API key |
-| `GH_TOKEN` | GitHub PAT |
-| `SLACK_BOT_TOKEN` | Slack Bot OAuth token |
-| `SLACK_SIGNING_SECRET` | Slack app signing secret |
-| `SLACK_CHANNEL_ID` | Slack channel ID |
-| `FLY_TOKEN` | Fly.io personal access token |
-| `ADMIN_API_KEY` | Admin auth for dashboard/status/retry endpoints (optional) |
 
 ## Security
 
-- **Admin API key authentication** — Dashboard, status API, and retry endpoints are protected by `ADMIN_API_KEY` (via `X-Admin-Key` header or `Authorization: Bearer <key>`)
-- **Rate limiting** — Webhook endpoint is rate-limited (configurable via `RATE_LIMIT`, default: 30/minute per IP)
-- **Slack signature verification** — All incoming webhooks are verified using HMAC-SHA256 before processing (including URL verification challenges)
+- **Slack signature verification** — All incoming webhooks are verified using HMAC-SHA256 before processing
+- **Rate limiting** — Webhook endpoint is rate-limited (30/min per IP) using D1-backed sliding window
+- **Idempotency** — Atomic INSERT OR IGNORE prevents duplicate processing from Slack retries
 - **Channel restriction** — Only reactions from the configured `SLACK_CHANNEL_ID` trigger remediation
-- **HTML escaping** — All user-controlled content is escaped before rendering in the dashboard (XSS protection)
-- **SQL injection prevention** — Column names in dynamic queries are validated against a whitelist
-- **Pinned dependencies** — All production dependencies use exact version pins to prevent supply-chain attacks
-- **Log sanitization** — Sensitive data patterns (tokens, API keys) are automatically redacted from logs
-- **Production .env disabled** — `.env` file loading is automatically disabled on Fly.io (prevents stale config)
-- **No hardcoded secrets** — All credentials are read from environment variables
+- **Admin API key** — `/retry` endpoint protected by `X-Admin-Key` header with constant-time comparison
+- **SQL injection prevention** — All queries use parameterized bindings; column names validated against whitelist
+- **No hardcoded secrets** — All credentials are Worker secrets (encrypted at rest)
 
 ## Observability
 
@@ -268,11 +299,11 @@ Each remediation session posts intermittent progress updates in the original Sla
 🔧 Devin is actively working on the fix...   ← session begins executing
 ⏸️ Session is blocked and needs attention     ← session hits a blocker
 ▶️ Session has resumed                        ← blocker resolved
-✅ PR ready for issue #7: <PR url>           ← fix complete
+✅ PR ready for issue #7: <PR url>           ← fix complete (@-mentions engineer)
 ❌ Remediation failed for issue #7            ← session errored
 ```
 
-Each status transition is reported exactly once (deduplication via `last_notified_status` tracking). Engineers get real-time visibility without leaving Slack.
+Each status transition is reported exactly once (deduplication via `last_status` tracking). Engineers get real-time visibility without leaving Slack.
 
 When a PR is ready, the notification @-mentions the engineer who reacted with 🚀 to start the remediation, so they get a direct ping to review.
 
@@ -280,32 +311,29 @@ When a PR is ready, the notification @-mentions the engineer who reacted with �
 
 | Mechanism | Behavior | Configuration |
 |-----------|----------|---------------|
-| **Devin API retry** | Exponential backoff on session creation (5s → 10s → 20s) | `MAX_RETRY_ATTEMPTS` (default: 3), `RETRY_BASE_DELAY_SECONDS` (default: 5) |
-| **Stale job timeout** | Jobs exceeding threshold are marked `timed_out` with Slack notification | `JOB_TIMEOUT_MINUTES` (default: 60) |
+| **Devin API retry** | Exponential backoff on session creation (5s → 10s → 20s) | 3 max attempts |
+| **Stale job timeout** | Jobs exceeding 60 min are marked `timed_out` with Slack notification | Hardcoded |
 | **Manual retry endpoint** | `POST /retry/{job_id}` re-triggers failed/timed-out jobs | Only accepts `failed`, `timed_out`, `finished_no_pr` statuses |
 | **Slack retry hints** | Failure/timeout messages include "React with 🚀 again to retry" | Automatic on failure |
 
-**Retry flow:**
-```
-Devin API call fails → backoff 5s → retry → backoff 10s → retry → raise error
-                                                                       ↓
-                                                            Job marked "failed"
-                                                                       ↓
-                                                 Slack: "❌ Failed. React 🚀 to retry"
-                                                                       ↓
-                                              Engineer reacts → new session created
-```
+## Migration: Fly.io → Cloudflare Workers
 
-**Stale job detection:**
-```
-Job created → 60 min elapsed with no completion
-                       ↓
-            Poller marks job "timed_out"
-                       ↓
-         Slack: "⏰ Timed out. React 🚀 to retry"
-```
+The service was migrated from Python/FastAPI on Fly.io to TypeScript/Hono on Cloudflare Workers due to Fly.io's 7-day free trial limitation and 5-minute auto-restart on trial machines.
 
-## Docker Image Details
+**Key differences:**
+
+| Aspect | Fly.io (Python) | CF Workers (TypeScript) |
+|--------|-----------------|------------------------|
+| Runtime | Long-running process | Request-driven V8 isolates |
+| Background tasks | asyncio loop (30s) | Cron Trigger (60s) |
+| Database | SQLite file on volume | D1 (serverless SQLite) |
+| State | In-memory locks + file | D1 (stateless workers) |
+| Free tier | 7-day trial | 100K requests/day (permanent) |
+| Cold start | None | ~1-5ms |
+
+See `doc/cloudflare-workers-migration-plan.md` for the full migration plan.
+
+## Docker Image Details (Fly.io legacy)
 
 - **Base**: `python:3.12-slim` (multi-stage build)
 - **User**: Runs as non-root `appuser` (uid 1000)
