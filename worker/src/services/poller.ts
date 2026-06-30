@@ -1,6 +1,7 @@
 import type { Env, Job } from "../types";
 import { getActiveJobs, updateJob, cleanupIdempotency } from "../db/queries";
 import { getSession } from "./devin";
+import { findPullRequestForIssue, parseIssueUrl } from "./github";
 import { postThreadReply, getUserMention } from "./slack";
 
 const STALE_TIMEOUT_MS = 60 * 60 * 1000; // 60 minutes
@@ -29,10 +30,28 @@ async function pollSingleJob(job: Job, env: Env): Promise<void> {
 
     const session = await getSession(env, job.session_id);
 
-    // PR detected while session is still running — treat as completed
+    // PR detected — treat as completed
     if (session.pull_request_url && !job.pr_url) {
       await markJobCompleted(job, session.pull_request_url, env);
       return;
+    }
+
+    // Fallback: check GitHub directly for PRs (Devin v1 API doesn't
+    // populate pull_request until session finishes)
+    if (!job.pr_url) {
+      const parsed = parseIssueUrl(job.issue_url);
+      if (parsed) {
+        const ghPrUrl = await findPullRequestForIssue(
+          env,
+          parsed.owner,
+          parsed.repo,
+          parsed.number
+        );
+        if (ghPrUrl) {
+          await markJobCompleted(job, ghPrUrl, env);
+          return;
+        }
+      }
     }
 
     if (session.status !== job.last_status) {

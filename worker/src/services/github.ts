@@ -57,6 +57,32 @@ export async function hasOpenPullRequests(
   return data.total_count > 0;
 }
 
+export async function findPullRequestForIssue(
+  env: Env,
+  owner: string,
+  repo: string,
+  issueNumber: number
+): Promise<string | null> {
+  // Search for open PRs that reference this issue number in title
+  const response = await githubFetch(
+    env,
+    `/search/issues?q=repo:${owner}/${repo}+is:pr+is:open+${issueNumber}+in:title`
+  );
+
+  if (!response.ok) return null;
+
+  const data = (await response.json()) as {
+    total_count: number;
+    items: Array<{ html_url: string; title: string }>;
+  };
+
+  if (data.total_count > 0 && data.items.length > 0) {
+    return data.items[0].html_url;
+  }
+
+  return null;
+}
+
 export function parseIssueUrl(url: string): {
   owner: string;
   repo: string;

@@ -75,21 +75,26 @@ export async function getSession(
     throw new Error(`Failed to get session ${sessionId}: ${response.status}`);
   }
 
-  const data = (await response.json()) as {
+  const rawData = await response.json();
+  const data = rawData as {
     session_id: string;
     status: string;
     url: string;
     structured_output?: {
       pull_request_url?: string;
-    };
-    pull_requests?: Array<{ url: string }>;
+    } | null;
+    pull_request?: {
+      url?: string;
+      html_url?: string;
+    } | null;
     title?: string;
   };
 
-  // Check structured_output first, then pull_requests array
+  // Extract PR URL from available fields
   const prUrl =
     data.structured_output?.pull_request_url ??
-    data.pull_requests?.[0]?.url ??
+    data.pull_request?.url ??
+    data.pull_request?.html_url ??
     undefined;
 
   return {
