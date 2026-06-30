@@ -191,6 +191,89 @@ export async function assignIssue(
   return response.ok;
 }
 
+// Checks whether all CI status checks on a PR are passing.
+export async function arePrChecksPassing(
+  env: Env,
+  owner: string,
+  repo: string,
+  prNumber: number
+): Promise<{ passing: boolean; sha: string | null }> {
+  // Get the PR to find the head SHA
+  const prResponse = await githubFetch(
+    env,
+    `/repos/${owner}/${repo}/pulls/${prNumber}`
+  );
+  if (!prResponse.ok) return { passing: false, sha: null };
+
+  const pr = (await prResponse.json()) as { head: { sha: string }; mergeable_state?: string };
+  const sha = pr.head.sha;
+
+  // Check combined status
+  const statusResponse = await githubFetch(
+    env,
+    `/repos/${owner}/${repo}/commits/${sha}/status`
+  );
+  if (!statusResponse.ok) return { passing: false, sha };
+
+  const status = (await statusResponse.json()) as { state: string; total_count: number };
+
+  // Also check check-runs (GitHub Actions use check-runs, not statuses)
+  const checksResponse = await githubFetch(
+    env,
+    `/repos/${owner}/${repo}/commits/${sha}/check-runs`
+  );
+
+  if (checksResponse.ok) {
+    const checks = (await checksResponse.json()) as {
+      total_count: number;
+      check_runs: Array<{ status: string; conclusion: string | null }>;
+    };
+
+    // If there are check runs, all must be completed and successful
+    if (checks.total_count > 0) {
+      const allPassed = checks.check_runs.every(
+        (cr) => cr.status === "completed" && (cr.conclusion === "success" || cr.conclusion === "neutral" || cr.conclusion === "skipped")
+      );
+      if (!allPassed) return { passing: false, sha };
+    }
+  }
+
+  // If there are commit statuses, verify they pass too
+  if (status.total_count > 0 && status.state !== "success") {
+    return { passing: false, sha };
+  }
+
+  return { passing: true, sha };
+}
+
+// Merges a pull request using the squash method.
+export async function mergePullRequest(
+  env: Env,
+  owner: string,
+  repo: string,
+  prNumber: number,
+  sha: string
+): Promise<boolean> {
+  const response = await fetch(
+    `${GITHUB_API}/repos/${owner}/${repo}/pulls/${prNumber}/merge`,
+    {
+      method: "PUT",
+      headers: {
+        Authorization: `token ${env.GH_TOKEN}`,
+        Accept: "application/vnd.github.v3+json",
+        "User-Agent": "devin-remediation-service",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        merge_method: "squash",
+        sha,
+      }),
+    }
+  );
+
+  return response.ok;
+}
+
 // Extracts owner, repo, and PR number from a GitHub pull request URL.
 export function parsePrUrl(url: string): {
   owner: string;

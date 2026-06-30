@@ -29,6 +29,13 @@ jobs:
       - name: Run tests
         run: npm test
 
+      - name: Apply D1 schema migrations
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CF_API_TOKEN }}
+          workingDirectory: worker
+          command: d1 execute remediation-db --remote --file=src/db/schema.sql
+
       - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3
         with:
