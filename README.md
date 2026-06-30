@@ -21,7 +21,7 @@ A daily scanner finds issues in the target repo and creates GitHub issues. These
 | Messaging | **Slack** (Events API + Bot) | HITL trigger (🚀 reaction), progress notifications, thread replies |
 | AI Engine | **Devin API** | Creates and monitors automated fix sessions |
 | VCS | **GitHub API** | Issue validation, PR detection, issue comments |
-| CI/CD | **GitHub Actions** | Auto-deploy + secret sync on push to `sandbox` |
+| CI/CD | **GitHub Actions** | Auto-deploy + secret sync on push to `main` |
 | Testing | **Vitest** | Unit and integration tests |
 
 ### Legacy (Fly.io — trial expired)
@@ -130,7 +130,7 @@ cognition/
 │   └── ...                        # Other modules
 ├── tests/                         # Python test suite (114 tests)
 ├── .github/workflows/
-│   ├── deploy-cloudflare.yml      # CI: test + deploy to CF Workers (sandbox)
+│   ├── deploy-cloudflare.yml      # CI: test + deploy to CF Workers (main)
 │   └── deploy.yml                 # CI: deploy to Fly.io (main)
 ├── doc/
 │   └── cloudflare-workers-migration-plan.md
@@ -177,15 +177,15 @@ All configuration is via environment variables (set as Worker secrets or GitHub 
 
 ### Cloudflare Workers (active)
 
-Deployed to Cloudflare's global edge network. GitHub Actions deploys on push to `sandbox`:
+Deployed to Cloudflare's global edge network. GitHub Actions deploys on push to `main`:
 
 ```
-git push origin sandbox  →  GitHub Action  →  wrangler deploy  →  Live on CF edge
+git push origin main  →  GitHub Action  →  wrangler deploy  →  Live on CF edge
 ```
 
 **Branches:**
-- `main` — production Python/Fly.io code (legacy)
-- `sandbox` — CF Workers deployment target
+- `main` — production (CF Workers deployment target)
+- `python` — backup of the Python/FastAPI implementation
 
 **Initial setup (one-time, already done):**
 ```bash
