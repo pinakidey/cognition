@@ -4,10 +4,11 @@ import { verifySlackSignature } from "../middleware/slack-verify";
 import { checkRateLimit } from "../middleware/rate-limit";
 import { checkIdempotency, findExistingActiveJob, findCompletedJobWithPr, createJob } from "../db/queries";
 import { getMessage, getMessageText, getMessageAttachments, postThreadReply, getUserEmail, getUserDisplayName } from "../services/slack";
-import { parseIssueUrl, parsePrUrl, getIssue, findGitHubUserByEmail, approvePullRequest, assignIssue } from "../services/github";
+import { parseIssueUrl, parsePrUrl, getIssue, findGitHubUserByEmail, approvePullRequest, assignIssue, arePrChecksPassing, mergePullRequest } from "../services/github";
 import { createSession } from "../services/devin";
 import { logAuditEvent } from "../db/audit";
 import { enqueueDeadLetter } from "../db/dead-letters";
+import { enqueuePendingMerge } from "../db/pending-merges";
 
 const ROCKET_EMOJI = "rocket";
 const APPROVE_EMOJI = "white_check_mark";
@@ -392,6 +393,92 @@ async function handleApproval(
         });
       } catch (auditErr) {
         console.error("Non-critical: audit log write failed:", auditErr);
+      }
+
+      // Auto-merge if all CI checks are passing
+      try {
+        const { passing, sha, merged: alreadyMerged } = await arePrChecksPassing(
+          env,
+          parsed.owner,
+          parsed.repo,
+          parsed.number
+        );
+
+        if (alreadyMerged) {
+          await postThreadReply(
+            env,
+            channel,
+            messageTs,
+            `ℹ️ PR #${parsed.number} is already merged.`
+          );
+        } else if (passing && sha) {
+          const merged = await mergePullRequest(
+            env,
+            parsed.owner,
+            parsed.repo,
+            parsed.number,
+            sha
+          );
+          if (merged) {
+            await postThreadReply(
+              env,
+              channel,
+              messageTs,
+              `🎉 PR #${parsed.number} auto-merged (all checks passed)`
+            );
+          } else {
+            // Merge failed despite checks passing (e.g., merge conflicts)
+            await enqueuePendingMerge(env.DB, {
+              pr_url: prUrl,
+              owner: parsed.owner,
+              repo: parsed.repo,
+              pr_number: parsed.number,
+              slack_channel: channel,
+              slack_message_ts: messageTs,
+            });
+            await postThreadReply(
+              env,
+              channel,
+              messageTs,
+              `⏳ PR #${parsed.number} approved — will auto-merge once all checks pass.`
+            );
+          }
+        } else {
+          // CI not yet passing — queue for poller
+          await enqueuePendingMerge(env.DB, {
+            pr_url: prUrl,
+            owner: parsed.owner,
+            repo: parsed.repo,
+            pr_number: parsed.number,
+            slack_channel: channel,
+            slack_message_ts: messageTs,
+          });
+          await postThreadReply(
+            env,
+            channel,
+            messageTs,
+            `⏳ PR #${parsed.number} approved — will auto-merge once all checks pass.`
+          );
+        }
+      } catch (mergeErr) {
+        console.error("Auto-merge attempt failed:", mergeErr);
+        // Still queue it so the poller can retry
+        try {
+          await enqueuePendingMerge(env.DB, {
+            pr_url: prUrl,
+            owner: parsed.owner,
+            repo: parsed.repo,
+            pr_number: parsed.number,
+            slack_channel: channel,
+            slack_message_ts: messageTs,
+          });
+        } catch { /* ignore */ }
+        await postThreadReply(
+          env,
+          channel,
+          messageTs,
+          `⏳ PR #${parsed.number} approved — will auto-merge once all checks pass.`
+        );
       }
     } else {
       await postThreadReply(

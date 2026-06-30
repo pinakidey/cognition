@@ -72,3 +72,21 @@ CREATE TABLE IF NOT EXISTS dead_letters (
 );
 
 CREATE INDEX IF NOT EXISTS idx_dead_letters_status ON dead_letters(status, next_retry_at);
+
+-- Pending merge queue (auto-merge after CI passes)
+CREATE TABLE IF NOT EXISTS pending_merges (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    pr_url TEXT NOT NULL,
+    owner TEXT NOT NULL,
+    repo TEXT NOT NULL,
+    pr_number INTEGER NOT NULL,
+    slack_channel TEXT,
+    slack_message_ts TEXT,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pending_merges_unique_pr ON pending_merges(owner, repo, pr_number) WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS idx_pending_merges_status ON pending_merges(status);

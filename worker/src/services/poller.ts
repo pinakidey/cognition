@@ -1,10 +1,11 @@
 import type { Env, Job } from "../types";
 import { getActiveJobs, updateJob, cleanupIdempotency } from "../db/queries";
 import { getSession } from "./devin";
-import { findPullRequestForIssue, parseIssueUrl } from "./github";
+import { findPullRequestForIssue, parseIssueUrl, arePrChecksPassing, mergePullRequest } from "./github";
 import { postThreadReply, getUserMention } from "./slack";
 import { cleanupCache } from "../db/cache";
 import { getRetryableDeadLetters, markDeadLetterRetried, cleanupOldDeadLetters } from "../db/dead-letters";
+import { getPendingMerges, updatePendingMerge } from "../db/pending-merges";
 
 const STALE_TIMEOUT_MS = 60 * 60 * 1000; // 60 minutes
 const PROGRESS_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
@@ -22,6 +23,9 @@ export async function pollActiveSessions(env: Env): Promise<void> {
 
   // Process dead letter queue
   await processDeadLetters(env);
+
+  // Process pending merges (auto-merge approved PRs once CI passes)
+  await processPendingMerges(env);
 
   // Periodic cleanup of old dead letters
   await cleanupOldDeadLetters(env.DB);
@@ -114,6 +118,127 @@ async function processDeadLetters(env: Env): Promise<void> {
         false,
         err instanceof Error ? err.message : "Retry failed"
       );
+    }
+  }
+}
+
+// Attempts to merge approved PRs that are waiting for CI to pass.
+async function processPendingMerges(env: Env): Promise<void> {
+  const pending = await getPendingMerges(env.DB);
+
+  for (const entry of pending) {
+    try {
+      const { passing, sha, merged: alreadyMerged, error } = await arePrChecksPassing(
+        env,
+        entry.owner,
+        entry.repo,
+        entry.pr_number
+      );
+
+      // Transient API error — treat like a caught exception (retry later)
+      if (error) {
+        await updatePendingMerge(env.DB, entry.id, "pending", true);
+        if (entry.attempts >= 29) {
+          await updatePendingMerge(env.DB, entry.id, "failed");
+          if (entry.slack_channel && entry.slack_message_ts) {
+            await postThreadReply(
+              env,
+              entry.slack_channel,
+              entry.slack_message_ts,
+              `⚠️ Auto-merge for PR #${entry.pr_number} failed — unable to verify CI status after repeated attempts. Please merge manually.`
+            );
+          }
+        }
+        continue;
+      }
+
+      // PR was already merged (manually or by another process)
+      if (alreadyMerged) {
+        await updatePendingMerge(env.DB, entry.id, "merged");
+        continue;
+      }
+
+      // PR was closed without merging
+      if (!sha) {
+        await updatePendingMerge(env.DB, entry.id, "failed");
+        if (entry.slack_channel && entry.slack_message_ts) {
+          await postThreadReply(
+            env,
+            entry.slack_channel,
+            entry.slack_message_ts,
+            `ℹ️ PR #${entry.pr_number} was closed — auto-merge cancelled.`
+          );
+        }
+        continue;
+      }
+
+      if (passing && sha) {
+        const merged = await mergePullRequest(
+          env,
+          entry.owner,
+          entry.repo,
+          entry.pr_number,
+          sha
+        );
+
+        if (merged) {
+          await updatePendingMerge(env.DB, entry.id, "merged");
+          if (entry.slack_channel && entry.slack_message_ts) {
+            await postThreadReply(
+              env,
+              entry.slack_channel,
+              entry.slack_message_ts,
+              `🎉 PR #${entry.pr_number} auto-merged (all checks passed)`
+            );
+          }
+        } else {
+          // Merge failed (conflicts, protected branch, etc.)
+          await updatePendingMerge(env.DB, entry.id, "pending", true);
+
+          // After 30 attempts, mark as failed and notify
+          if (entry.attempts >= 29) {
+            await updatePendingMerge(env.DB, entry.id, "failed");
+            if (entry.slack_channel && entry.slack_message_ts) {
+              await postThreadReply(
+                env,
+                entry.slack_channel,
+                entry.slack_message_ts,
+                `⚠️ Auto-merge for PR #${entry.pr_number} failed after 30 attempts — the PR may have merge conflicts or branch protection issues. Please merge manually.`
+              );
+            }
+          }
+        }
+      } else {
+        // Checks not passing yet — increment attempt counter
+        await updatePendingMerge(env.DB, entry.id, "pending", true);
+
+        // After 30 attempts (~30 min), mark as failed
+        if (entry.attempts >= 29) {
+          await updatePendingMerge(env.DB, entry.id, "failed");
+          if (entry.slack_channel && entry.slack_message_ts) {
+            await postThreadReply(
+              env,
+              entry.slack_channel,
+              entry.slack_message_ts,
+              `⚠️ Auto-merge for PR #${entry.pr_number} timed out — CI checks did not pass within 30 minutes. Please merge manually.`
+            );
+          }
+        }
+      }
+    } catch (err) {
+      console.error(`Error processing pending merge for PR #${entry.pr_number}:`, err);
+      await updatePendingMerge(env.DB, entry.id, "pending", true);
+      if (entry.attempts >= 29) {
+        await updatePendingMerge(env.DB, entry.id, "failed");
+        if (entry.slack_channel && entry.slack_message_ts) {
+          await postThreadReply(
+            env,
+            entry.slack_channel,
+            entry.slack_message_ts,
+            `⚠️ Auto-merge for PR #${entry.pr_number} failed after repeated errors. Please merge manually.`
+          );
+        }
+      }
     }
   }
 }
