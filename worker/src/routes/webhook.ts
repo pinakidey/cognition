@@ -147,6 +147,17 @@ async function handleRemediation(
       return;
     }
 
+    // Only remediate open issues
+    if (issue.state !== "open") {
+      await postThreadReply(
+        env,
+        channel,
+        messageTs,
+        `⚠️ Issue #${parsed.number} is already ${issue.state}. Skipping remediation.`
+      );
+      return;
+    }
+
     // Create Devin session
     const prompt = `Fix the following GitHub issue: ${issueUrl}\n\nTitle: ${issue.title}\n\nPlease investigate the issue, implement a fix, and create a pull request.`;
     const session = await createSession(env, prompt);

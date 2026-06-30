@@ -188,7 +188,8 @@ export async function checkIdempotency(
 }
 
 export async function cleanupIdempotency(db: D1Database): Promise<void> {
-  const cutoff = Math.floor(Date.now() / 1000) - 300;
+  // Use 3600s cutoff to respect message locks (1-hour TTL)
+  const cutoff = Math.floor(Date.now() / 1000) - 3600;
   await db
     .prepare("DELETE FROM idempotency WHERE created_at < ?")
     .bind(cutoff)
