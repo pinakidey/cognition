@@ -412,7 +412,85 @@ async function handleApproval(
     }
   } catch (err) {
     console.error("Error in handleApproval:", err);
+    // Temporary: post error to thread for debugging
+    try {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      await postThreadReply(
+        env,
+        channel,
+        messageTs,
+        `❌ Approval error (debug): ${errMsg}`
+      );
+    } catch {
+      // ignore post failure
+    }
   }
 }
+
+// Temporary debug endpoint to test approval flow without webhook signature
+app.get("/webhook/test-approve", async (c) => {
+  const channel = c.env.SLACK_CHANNEL_ID || "C0BE0NKLY3E";
+  const messageTs = c.req.query("ts") || "1782805522.133329";
+  const userId = c.req.query("user") || "U0H9KJEQP";
+
+  const steps: string[] = [];
+  try {
+    steps.push("1. Starting handleApproval test");
+
+    // Step 1: getMessage
+    const msg = await getMessage(c.env, channel, messageTs);
+    steps.push(`2. getMessage: text=${msg.text.substring(0, 80)}...`);
+
+    // Step 2: extractGithubPrUrl
+    const prUrl = extractGithubPrUrl(msg.text, msg.attachments);
+    steps.push(`3. extractGithubPrUrl: ${prUrl}`);
+    if (!prUrl) return c.json({ steps, error: "No PR URL found" });
+
+    const parsed = parsePrUrl(prUrl);
+    steps.push(`4. parsePrUrl: ${JSON.stringify(parsed)}`);
+    if (!parsed) return c.json({ steps, error: "Failed to parse PR URL" });
+
+    // Step 3: getUserEmail
+    const email = await getUserEmail(c.env, userId);
+    steps.push(`5. getUserEmail: ${email}`);
+    if (!email) return c.json({ steps, error: "No email found" });
+
+    // Step 4: findGitHubUserByEmail
+    const ghUsername = await findGitHubUserByEmail(c.env, email);
+    steps.push(`6. findGitHubUserByEmail: ${ghUsername}`);
+
+    const displayName = await getUserDisplayName(c.env, userId);
+    steps.push(`7. getUserDisplayName: ${displayName}`);
+
+    // Step 5: Build attribution
+    const attribution = ghUsername
+      ? `Approved by @${ghUsername} (${displayName}) via Slack ✅ reaction`
+      : `Approved by ${displayName} (${email}) via Slack ✅ reaction`;
+    steps.push(`8. attribution: ${attribution}`);
+
+    // Step 6: approvePullRequest (DRY RUN - don't actually approve)
+    const dryRun = c.req.query("execute") !== "true";
+    if (dryRun) {
+      steps.push("9. DRY RUN - would call approvePullRequest. Add ?execute=true to actually approve.");
+      return c.json({ steps, dryRun: true });
+    }
+
+    const success = await approvePullRequest(c.env, parsed.owner, parsed.repo, parsed.number, attribution);
+    steps.push(`9. approvePullRequest: success=${success}`);
+
+    if (success) {
+      await postThreadReply(c.env, channel, messageTs, `✅ PR #${parsed.number} approved (test endpoint)`);
+      steps.push("10. Posted success reply");
+    } else {
+      steps.push("10. Approval failed (GitHub API rejected)");
+    }
+
+    return c.json({ steps, success });
+  } catch (err) {
+    const errMsg = err instanceof Error ? `${err.message}\n${err.stack}` : String(err);
+    steps.push(`ERROR: ${errMsg}`);
+    return c.json({ steps, error: errMsg }, 500);
+  }
+});
 
 export const webhookRoutes = app;
