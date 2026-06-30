@@ -343,6 +343,18 @@ npx wrangler deploy
 
 ## Observability
 
+### Cloudflare Workers Logging & Monitoring
+
+Comprehensive application logging and monitoring is enabled via Cloudflare's built-in observability platform:
+
+- **Persistent Logs**: All Worker invocations are logged with full request/response details (100% sampling rate)
+- **Invocation Logs**: Every cron trigger, webhook event, and HTTP request is captured
+- **Real-time Tailing**: `wrangler tail` for live log streaming during development
+- **Cloudflare Dashboard**: Analytics, error rates, CPU time, and request metrics available at `dash.cloudflare.com`
+- **Log Retention**: Persisted logs available for historical debugging and incident investigation
+
+This is configured in `wrangler.toml` under `[observability]` with full sampling — every request is logged, not sampled.
+
 ### Dashboard (`/`)
 
 The HTML dashboard provides at-a-glance metrics:

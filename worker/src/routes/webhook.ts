@@ -217,14 +217,18 @@ async function handleRemediation(
       console.error("Non-critical: issue assignment failed:", assignErr);
     }
 
-    // Audit log: remediation triggered
-    await logAuditEvent(env.DB, {
-      action: "remediation_started",
-      actor_slack_id: user,
-      actor_github: ghUsername ?? undefined,
-      target: issueUrl,
-      details: `Issue #${parsed.number}: ${issue.title} → Session ${session.sessionId}`,
-    });
+    // Audit log: non-critical — don't let failures mask successful remediation
+    try {
+      await logAuditEvent(env.DB, {
+        action: "remediation_started",
+        actor_slack_id: user,
+        actor_github: ghUsername ?? undefined,
+        target: issueUrl,
+        details: `Issue #${parsed.number}: ${issue.title} → Session ${session.sessionId}`,
+      });
+    } catch (auditErr) {
+      console.error("Non-critical: audit log write failed:", auditErr);
+    }
 
     // Notify in thread
     const mention = ghUsername ? ` (assigned to @${ghUsername})` : "";
@@ -308,12 +312,16 @@ async function handleApproval(
           messageTs,
           "⚠️ You are not authorized to approve PRs via Slack. Contact an admin to be added to the allowlist."
         );
-        await logAuditEvent(env.DB, {
-          action: "approval_denied",
-          actor_slack_id: slackUserId,
-          target: `channel:${channel}:${messageTs}`,
-          details: "User not in APPROVAL_ALLOWLIST",
-        });
+        try {
+          await logAuditEvent(env.DB, {
+            action: "approval_denied",
+            actor_slack_id: slackUserId,
+            target: `channel:${channel}:${messageTs}`,
+            details: "User not in APPROVAL_ALLOWLIST",
+          });
+        } catch (auditErr) {
+          console.error("Non-critical: audit log write failed:", auditErr);
+        }
         return;
       }
     }
@@ -368,15 +376,19 @@ async function handleApproval(
         `✅ PR #${parsed.number} approved on GitHub (by ${ghRef})`
       );
 
-      // Audit log: successful approval
-      await logAuditEvent(env.DB, {
-        action: "pr_approved",
-        actor_slack_id: slackUserId,
-        actor_email: email,
-        actor_github: ghUsername ?? undefined,
-        target: prUrl,
-        details: `PR #${parsed.number} in ${parsed.owner}/${parsed.repo}`,
-      });
+      // Audit log: non-critical
+      try {
+        await logAuditEvent(env.DB, {
+          action: "pr_approved",
+          actor_slack_id: slackUserId,
+          actor_email: email,
+          actor_github: ghUsername ?? undefined,
+          target: prUrl,
+          details: `PR #${parsed.number} in ${parsed.owner}/${parsed.repo}`,
+        });
+      } catch (auditErr) {
+        console.error("Non-critical: audit log write failed:", auditErr);
+      }
     } else {
       await postThreadReply(
         env,
@@ -385,14 +397,18 @@ async function handleApproval(
         `❌ Failed to approve PR #${parsed.number}. The service token may lack write access to this repo.`
       );
 
-      // Audit log: failed approval
-      await logAuditEvent(env.DB, {
-        action: "pr_approval_failed",
-        actor_slack_id: slackUserId,
-        actor_email: email,
-        target: prUrl,
-        details: "GitHub API rejected the approval request",
-      });
+      // Audit log: non-critical
+      try {
+        await logAuditEvent(env.DB, {
+          action: "pr_approval_failed",
+          actor_slack_id: slackUserId,
+          actor_email: email,
+          target: prUrl,
+          details: "GitHub API rejected the approval request",
+        });
+      } catch (auditErr) {
+        console.error("Non-critical: audit log write failed:", auditErr);
+      }
     }
   } catch (err) {
     console.error("Error in handleApproval:", err);

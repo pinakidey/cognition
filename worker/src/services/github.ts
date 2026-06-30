@@ -89,8 +89,11 @@ export async function findPullRequestForIssue(
     ? data.items[0].html_url
     : null;
 
-  // Cache the result (store empty string for null to differentiate from cache miss)
-  await setCache(env.DB, cacheKey, result ?? "");
+  // Only cache positive results — negative results should not be cached
+  // because the poller runs every 60s specifically to detect new PRs quickly
+  if (result) {
+    await setCache(env.DB, cacheKey, result);
+  }
 
   return result;
 }
