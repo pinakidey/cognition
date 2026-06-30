@@ -4,7 +4,7 @@ import { verifySlackSignature } from "../middleware/slack-verify";
 import { checkRateLimit } from "../middleware/rate-limit";
 import { checkIdempotency, findExistingActiveJob, findCompletedJobWithPr, createJob } from "../db/queries";
 import { getMessageText, getMessageAttachments, postThreadReply, getUserEmail, getUserDisplayName } from "../services/slack";
-import { parseIssueUrl, parsePrUrl, getIssue, findGitHubUserByEmail, approvePullRequest } from "../services/github";
+import { parseIssueUrl, parsePrUrl, getIssue, findGitHubUserByEmail, approvePullRequest, assignIssue } from "../services/github";
 import { createSession } from "../services/devin";
 
 const ROCKET_EMOJI = "rocket";
@@ -201,12 +201,23 @@ async function handleRemediation(
       slack_message_ts: messageTs,
     });
 
+    // Assign issue to the triggering user's GitHub account
+    const email = await getUserEmail(env, user);
+    let ghUsername: string | null = null;
+    if (email) {
+      ghUsername = await findGitHubUserByEmail(env, email);
+      if (ghUsername) {
+        await assignIssue(env, parsed.owner, parsed.repo, parsed.number, ghUsername);
+      }
+    }
+
     // Notify in thread
+    const mention = ghUsername ? ` (assigned to @${ghUsername})` : "";
     await postThreadReply(
       env,
       channel,
       messageTs,
-      `🚀 Remediation started for issue #${parsed.number}: "${issue.title}"\n🔗 Session: ${session.url}`
+      `🚀 Remediation started for issue #${parsed.number}: "${issue.title}"${mention}\n🔗 Session: ${session.url}`
     );
   } catch (err) {
     console.error("Error in handleRemediation:", err);

@@ -133,6 +133,32 @@ export async function approvePullRequest(
   return response.ok;
 }
 
+export async function assignIssue(
+  env: Env,
+  owner: string,
+  repo: string,
+  issueNumber: number,
+  assignee: string
+): Promise<boolean> {
+  const response = await fetch(
+    `${GITHUB_API}/repos/${owner}/${repo}/issues/${issueNumber}`,
+    {
+      method: "PATCH",
+      headers: {
+        Authorization: `token ${env.GH_TOKEN}`,
+        Accept: "application/vnd.github.v3+json",
+        "User-Agent": "devin-remediation-service",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        assignees: [assignee],
+      }),
+    }
+  );
+
+  return response.ok;
+}
+
 export function parsePrUrl(url: string): {
   owner: string;
   repo: string;
