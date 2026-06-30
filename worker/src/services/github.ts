@@ -205,7 +205,7 @@ export async function arePrChecksPassing(
   );
   if (!prResponse.ok) return { passing: false, sha: null };
 
-  const pr = (await prResponse.json()) as { head: { sha: string }; mergeable_state?: string };
+  const pr = (await prResponse.json()) as { head: { sha: string } };
   const sha = pr.head.sha;
 
   // Check combined status
@@ -240,6 +240,11 @@ export async function arePrChecksPassing(
 
   // If there are commit statuses, verify they pass too
   if (status.total_count > 0 && status.state !== "success") {
+    return { passing: false, sha };
+  }
+
+  // If no checks exist at all, treat as not passing (CI may not have registered yet)
+  if (checks.total_count === 0 && status.total_count === 0) {
     return { passing: false, sha };
   }
 
