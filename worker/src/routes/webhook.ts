@@ -208,7 +208,8 @@ async function handleRemediation(
       if (email) {
         ghUsername = await findGitHubUserByEmail(env, email);
         if (ghUsername) {
-          await assignIssue(env, parsed.owner, parsed.repo, parsed.number, ghUsername);
+          const assigned = await assignIssue(env, parsed.owner, parsed.repo, parsed.number, ghUsername);
+          if (!assigned) ghUsername = null;
         }
       }
     } catch (assignErr) {
