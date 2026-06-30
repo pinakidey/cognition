@@ -90,11 +90,11 @@ export async function getSession(
     title?: string;
   };
 
-  // Extract PR URL from available fields
+  // Extract PR URL — prefer html_url (browser link) over url (API endpoint)
   const prUrl =
     data.structured_output?.pull_request_url ??
-    data.pull_request?.url ??
     data.pull_request?.html_url ??
+    data.pull_request?.url ??
     undefined;
 
   return {

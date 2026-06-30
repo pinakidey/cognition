@@ -6,7 +6,9 @@ Event-driven issue remediation service that uses the [Devin API](https://docs.de
 
 ![Workflow](doc/workflow-illustration.png)
 
-A daily scanner finds issues in the target repo and creates GitHub issues. These flow into the `#devin-report` Slack channel where engineers review them. When an engineer reacts with 🚀, the remediation service picks it up, spins up a Devin AI session to implement the fix, and delivers a ready-to-review PR — all within minutes, with full observability via the dashboard and Slack thread updates.
+A daily scanner finds issues in the target repo and creates GitHub issues. These flow into the `#devin-report` Slack channel where engineers review them. When an engineer reacts with 🚀, the remediation service picks it up, spins up a Devin AI session to implement the fix, posts progress updates every 5 minutes, and delivers a ready-to-review PR — all within minutes, with full observability via the dashboard and Slack thread updates.
+
+Once the PR is ready, the engineer can approve it directly from Slack by reacting with ✅ on the PR notification message — the service maps their Slack identity to GitHub and submits an approved review on their behalf.
 
 ## Tech Stack
 
@@ -72,6 +74,7 @@ curl -X POST -H "X-Admin-Key: <your-admin-key>" https://devin-remediation-servic
 [Slack Events API → POST /webhook/slack]
         │
         ├─ Slack signature verification (HMAC-SHA256)
+        ├─ Channel restriction (only configured channel)
         ├─ Rate limiting (30 req/min per IP via D1)
         ├─ Idempotency check (prevents duplicate processing)
         ├─ Extracts GitHub issue URL from message
@@ -80,11 +83,20 @@ curl -X POST -H "X-Admin-Key: <your-admin-key>" https://devin-remediation-servic
         ├─ Posts Slack thread reply: "🚀 Remediation started"
         │
         ▼ (Cron Trigger — every 60s)
-[Polls Devin session status via D1 + Devin API]
+[Polls Devin session status via D1 + Devin API + GitHub API]
         │
-        ├─ On completion: posts PR link in Slack thread (@-mentions triggering engineer)
+        ├─ Every 5 min: posts progress update in Slack thread
+        ├─ PR detected (via GitHub search): posts PR link, @-mentions engineer
         ├─ On failure: notifies in Slack thread with retry hint
         ├─ On timeout (60 min): marks stale, notifies
+        │
+        ▼ (Engineer reacts with ✅ on PR message)
+[PR Approval via Slack]
+        │
+        ├─ Extracts PR URL from message
+        ├─ Looks up Slack user's email → GitHub username
+        ├─ Submits APPROVE review on GitHub with attribution
+        ├─ Posts confirmation in Slack thread
         │
         ▼
 [GET / — Observability Dashboard]
@@ -156,8 +168,50 @@ cognition/
 3. **Slack Triage** (Devin Automation) analyzes and replies with root cause + confidence score
 4. **Engineer** reviews triage and reacts with 🚀 to approve remediation
 5. **This Service** receives the Slack event, validates the issue, and starts a Devin session
-6. **Devin** fixes the issue and creates a PR
-7. **Cron Trigger** (every 60s) detects PR creation and notifies Slack thread with @-mention
+6. **Progress Updates** — every 5 minutes, posts session status in the Slack thread
+7. **Devin** fixes the issue and creates a PR
+8. **PR Detection** — cron trigger (every 60s) searches GitHub for the PR and notifies Slack with @-mention
+9. **Engineer** reacts with ✅ on the PR notification message
+10. **PR Approval** — service maps Slack user → GitHub user (via email) and submits an APPROVE review with attribution
+
+## Monthly Cost Estimate
+
+The service itself runs entirely on Cloudflare's free tier. The primary cost driver is Devin API usage (per-session compute). GitHub and Slack APIs are free.
+
+### Per-Ticket Breakdown
+
+| Component | Per Ticket | Notes |
+|-----------|-----------|-------|
+| **Devin API** | ~$2–5 | Varies by task complexity (simple bug fix vs. large refactor) |
+| **CF Workers** | $0 | ~70 requests per ticket (webhook + polling + notifications) |
+| **D1 Database** | $0 | ~60 reads + 10 writes per ticket |
+| **GitHub API** | $0 | ~3–5 calls per ticket (issue fetch, PR search, approval) |
+| **Slack API** | $0 | ~5–8 calls per ticket (message fetch, thread replies) |
+
+### Scale Projections
+
+| Scale | Tickets/mo | Devin API | CF Workers | D1 | **Total** |
+|-------|-----------|-----------|------------|-----|-----------|
+| **Low** | 100 | $200–500 | $0 (free tier) | $0 (free tier) | **~$200–500/mo** |
+| **Medium** | 500 | $1,000–2,500 | $0 (free tier) | $0 (free tier) | **~$1,000–2,500/mo** |
+| **High** | 1,000 | $2,000–5,000 | $0 (free tier) | $0 (free tier) | **~$2,000–5,000/mo** |
+| **Very High** | 5,000 | $10,000–25,000 | ~$5 (paid tier) | ~$5 (paid tier) | **~$10,000–25,000/mo** |
+
+### Free Tier Headroom (Cloudflare)
+
+| Resource | Free Limit | Usage at 1,000 tickets/mo | Headroom |
+|----------|-----------|---------------------------|----------|
+| Worker requests | 100K/day (3M/mo) | ~70K/mo | **43x** |
+| D1 reads | 5M/day (150M/mo) | ~60K/mo | **2,500x** |
+| D1 writes | 100K/day (3M/mo) | ~10K/mo | **300x** |
+| Cron triggers | Unlimited | 1/min (44K/mo) | **∞** |
+
+### Notes
+
+- **Devin API cost** depends on your plan: Teams ($80/mo minimum + usage), Enterprise (custom ACU pricing). The $2–5/session estimate assumes moderate bug-fix tasks; complex multi-file refactors may cost more.
+- **Infrastructure cost is effectively $0** up to ~5,000 tickets/month on Cloudflare's free tier.
+- **GitHub API** has a 5,000 requests/hour limit for authenticated requests — sufficient for all projected scales.
+- The Devin session itself handles the expensive work (LLM inference, code execution, testing). All service infrastructure is just lightweight orchestration.
 
 ## Configuration
 
@@ -166,12 +220,23 @@ All configuration is via environment variables (set as Worker secrets or GitHub 
 | Variable | Description |
 |----------|-------------|
 | `DEVIN_API_KEY` | Devin API key (service or personal) |
-| `GH_TOKEN` | GitHub PAT with repo access |
+| `GH_TOKEN` | GitHub PAT with `repo` scope (for PR approval + issue validation) |
 | `GITHUB_REPO` | Target repository (default: `pinakidey/superset`) |
 | `SLACK_BOT_TOKEN` | Slack Bot OAuth token |
 | `SLACK_SIGNING_SECRET` | Slack app signing secret for request verification |
-| `SLACK_CHANNEL_ID` | Channel ID for `#devin-report` (restricts which channel can trigger remediation) |
+| `SLACK_CHANNEL_ID` | Channel ID for `#devin-report` (restricts which channel can trigger actions) |
 | `ADMIN_API_KEY` | API key for `/retry` endpoint (optional) |
+
+### Required Slack Bot Scopes
+
+| Scope | Purpose |
+|-------|---------|
+| `channels:history` | Read messages to extract issue/PR URLs |
+| `channels:join` | Join the configured channel |
+| `chat:write` | Post thread replies (notifications, progress) |
+| `reactions:read` | Receive reaction events |
+| `reactions:write` | Add reactions (for E2E testing) |
+| `users:read.email` | Look up user email for GitHub mapping (✅ approval) |
 
 ## Deployment
 
@@ -290,22 +355,26 @@ The HTML dashboard provides at-a-glance metrics:
 
 The `/status` JSON endpoint returns the same data in machine-readable format, suitable for monitoring/alerting integrations.
 
-### Slack Thread Progress Notifications
+### Slack Thread Notifications
 
-Each remediation session posts intermittent progress updates in the original Slack thread:
+Each remediation session maintains a full conversation in the original Slack thread:
 
 ```
-🚀 Remediation started for issue #7          ← reaction triggers session
-🔧 Devin is actively working on the fix...   ← session begins executing
-⏸️ Session is blocked and needs attention     ← session hits a blocker
-▶️ Session has resumed                        ← blocker resolved
-✅ PR ready for issue #7: <PR url>           ← fix complete (@-mentions engineer)
-❌ Remediation failed for issue #7            ← session errored
+🚀 Remediation started for issue #7: "Fix login bug"     ← 🚀 reaction triggers session
+   🔗 Session: <devin session url>
+🔧 Progress update (5min elapsed): status is *running*   ← periodic every 5 min
+🔧 Progress update (10min elapsed): status is *running*  ← keeps team informed
+⏸️ Session is blocked and needs attention                 ← session hits a blocker
+▶️ Session has resumed                                    ← blocker resolved
+✅ PR ready for issue #7: <PR url> @engineer              ← PR detected, @-mentions triggerer
+✅ PR #22 approved on GitHub (by @engineer)               ← ✅ reaction triggers approval
 ```
 
-Each status transition is reported exactly once (deduplication via `last_status` tracking). Engineers get real-time visibility without leaving Slack.
+**Progress updates** post every 5 minutes while the session is active, keeping the team aware without requiring them to check the Devin dashboard.
 
-When a PR is ready, the notification @-mentions the engineer who reacted with 🚀 to start the remediation, so they get a direct ping to review.
+**PR detection** uses GitHub search API as a fallback since the Devin v1 API doesn't expose PRs until the session finishes. The poller checks every 60s for open PRs referencing the issue.
+
+**PR approval** is triggered by reacting with ✅ on any message containing a GitHub PR URL. The service maps the Slack user's email to their GitHub account and submits an APPROVE review with attribution.
 
 ### Failsafes & Retries
 

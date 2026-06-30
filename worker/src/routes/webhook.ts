@@ -66,8 +66,20 @@ app.post("/webhook/slack", verifySlackSignature, checkRateLimit, async (c) => {
   const messageTs = event.item.ts;
   const user = event.user;
 
+  // Channel restriction — applies to all reaction types
+  if (c.env.SLACK_CHANNEL_ID && channel !== c.env.SLACK_CHANNEL_ID) {
+    return c.json({ ok: true });
+  }
+
   // Route by reaction type
   if (event.reaction === APPROVE_EMOJI) {
+    // Idempotency: prevent duplicate approvals from Slack retries
+    const approvalKey = `approve:${channel}:${messageTs}:${user}`;
+    const isDuplicate = await checkIdempotency(c.env.DB, approvalKey);
+    if (isDuplicate) {
+      return c.json({ ok: true });
+    }
+
     c.executionCtx.waitUntil(
       handleApproval(c.env, channel, messageTs, user)
     );
@@ -75,11 +87,6 @@ app.post("/webhook/slack", verifySlackSignature, checkRateLimit, async (c) => {
   }
 
   if (event.reaction !== ROCKET_EMOJI) {
-    return c.json({ ok: true });
-  }
-
-  // Channel restriction
-  if (c.env.SLACK_CHANNEL_ID && channel !== c.env.SLACK_CHANNEL_ID) {
     return c.json({ ok: true });
   }
 
