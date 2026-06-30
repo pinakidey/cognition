@@ -7,23 +7,32 @@ import type { Env } from "../types";
  * falls back to byte-by-byte comparison with constant time.
  */
 function safeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
+  const encoder = new TextEncoder();
+  const aBuf = encoder.encode(a);
+  const bBuf = encoder.encode(b);
 
   // Use timingSafeEqual if available (Workers runtime)
+  // Pad shorter buffer to match length to avoid leaking key length via timing
   if (typeof crypto !== "undefined" && crypto.subtle?.timingSafeEqual) {
-    const encoder = new TextEncoder();
-    const aBuf = encoder.encode(a);
-    const bBuf = encoder.encode(b);
-    return crypto.subtle.timingSafeEqual(
-      aBuf.buffer as ArrayBuffer,
-      bBuf.buffer as ArrayBuffer
+    const maxLen = Math.max(aBuf.length, bBuf.length);
+    const paddedA = new Uint8Array(maxLen);
+    const paddedB = new Uint8Array(maxLen);
+    paddedA.set(aBuf);
+    paddedB.set(bBuf);
+    return (
+      aBuf.length === bBuf.length &&
+      crypto.subtle.timingSafeEqual(
+        paddedA.buffer as ArrayBuffer,
+        paddedB.buffer as ArrayBuffer
+      )
     );
   }
 
-  // Fallback: constant-time comparison
-  let result = 0;
-  for (let i = 0; i < a.length; i++) {
-    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  // Fallback: constant-time comparison (pad to equal length)
+  const maxLen = Math.max(a.length, b.length);
+  let result = a.length ^ b.length; // non-zero if lengths differ
+  for (let i = 0; i < maxLen; i++) {
+    result |= (a.charCodeAt(i) || 0) ^ (b.charCodeAt(i) || 0);
   }
   return result === 0;
 }
@@ -38,10 +47,12 @@ export async function verifyAdminKey(
     return;
   }
 
-  const token =
-    c.req.header("x-admin-key") ??
-    c.req.header("authorization")?.replace("Bearer ", "").trim() ??
-    "";
+  const authHeader = c.req.header("authorization") ?? "";
+  const bearerToken = authHeader.startsWith("Bearer ")
+    ? authHeader.slice(7).trim()
+    : "";
+
+  const token = c.req.header("x-admin-key") ?? (bearerToken || "");
 
   if (!safeEqual(token, c.env.ADMIN_API_KEY)) {
     return c.json({ error: "Unauthorized" }, 401);
