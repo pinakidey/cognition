@@ -7,6 +7,8 @@ export interface Env {
   SLACK_CHANNEL_ID: string;
   ADMIN_API_KEY?: string;
   GITHUB_REPO: string;
+  APPROVAL_ALLOWLIST?: string;
+  MOCK_MODE?: string;
 }
 
 export type JobStatus =

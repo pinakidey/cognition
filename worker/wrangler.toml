@@ -11,5 +11,15 @@ database_id = "f6ce4959-8aa1-471d-9f39-62dfc87d6a12"
 [triggers]
 crons = ["*/1 * * * *"]
 
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+persist = true
+invocation_logs = true
+
 [vars]
 GITHUB_REPO = "pinakidey/superset"

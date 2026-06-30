@@ -1,4 +1,5 @@
 import type { Env } from "../types";
+import { getCached, setCache } from "../db/cache";
 
 const GITHUB_API = "https://api.github.com";
 
@@ -63,6 +64,14 @@ export async function findPullRequestForIssue(
   repo: string,
   issueNumber: number
 ): Promise<string | null> {
+  const cacheKey = `pr_search:${owner}/${repo}:${issueNumber}`;
+
+  // Check cache first (5-minute TTL)
+  const cached = await getCached(env.DB, cacheKey);
+  if (cached !== null) {
+    return cached === "" ? null : cached;
+  }
+
   // Search for open PRs that reference this issue number in title
   const response = await githubFetch(
     env,
@@ -76,17 +85,31 @@ export async function findPullRequestForIssue(
     items: Array<{ html_url: string; title: string }>;
   };
 
-  if (data.total_count > 0 && data.items.length > 0) {
-    return data.items[0].html_url;
+  const result = data.total_count > 0 && data.items.length > 0
+    ? data.items[0].html_url
+    : null;
+
+  // Only cache positive results — negative results should not be cached
+  // because the poller runs every 60s specifically to detect new PRs quickly
+  if (result) {
+    await setCache(env.DB, cacheKey, result);
   }
 
-  return null;
+  return result;
 }
 
 export async function findGitHubUserByEmail(
   env: Env,
   email: string
 ): Promise<string | null> {
+  const cacheKey = `user_email:${email}`;
+
+  // Check cache (longer TTL for user lookups — 30 min)
+  const cached = await getCached(env.DB, cacheKey, 1800);
+  if (cached !== null) {
+    return cached === "" ? null : cached;
+  }
+
   const response = await githubFetch(
     env,
     `/search/users?q=${encodeURIComponent(email)}+in:email`
@@ -99,11 +122,13 @@ export async function findGitHubUserByEmail(
     items: Array<{ login: string }>;
   };
 
-  if (data.total_count > 0 && data.items.length > 0) {
-    return data.items[0].login;
-  }
+  const result = data.total_count > 0 && data.items.length > 0
+    ? data.items[0].login
+    : null;
 
-  return null;
+  await setCache(env.DB, cacheKey, result ?? "");
+
+  return result;
 }
 
 export async function approvePullRequest(

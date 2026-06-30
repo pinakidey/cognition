@@ -3,6 +3,8 @@ import { getActiveJobs, updateJob, cleanupIdempotency } from "../db/queries";
 import { getSession } from "./devin";
 import { findPullRequestForIssue, parseIssueUrl } from "./github";
 import { postThreadReply, getUserMention } from "./slack";
+import { cleanupCache } from "../db/cache";
+import { getRetryableDeadLetters, markDeadLetterRetried, cleanupOldDeadLetters } from "../db/dead-letters";
 
 const STALE_TIMEOUT_MS = 60 * 60 * 1000; // 60 minutes
 const PROGRESS_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
@@ -13,8 +15,105 @@ export async function pollActiveSessions(env: Env): Promise<void> {
   // Poll all jobs concurrently
   await Promise.all(activeJobs.map((job) => pollSingleJob(job, env)));
 
-  // Cleanup old idempotency entries
+  // Cleanup old idempotency entries + expired cache
   await cleanupIdempotency(env.DB);
+  await cleanupCache(env.DB);
+
+  // Process dead letter queue
+  await processDeadLetters(env);
+
+  // Periodic cleanup of old dead letters
+  await cleanupOldDeadLetters(env.DB);
+}
+
+async function processDeadLetters(env: Env): Promise<void> {
+  const retryable = await getRetryableDeadLetters(env.DB);
+
+  for (const letter of retryable) {
+    try {
+      const payload = JSON.parse(letter.payload) as {
+        channel: string;
+        messageTs: string;
+        user: string;
+      };
+
+      // Verify the message is still accessible before retrying
+      const { getMessage } = await import("./slack");
+      const msg = await getMessage(env, payload.channel, payload.messageTs);
+
+      if (!msg.text && msg.attachments.length === 0) {
+        await markDeadLetterRetried(env.DB, letter.id, false, "Message no longer accessible");
+        continue;
+      }
+
+      // Re-import extraction logic and attempt to process
+      const { parseIssueUrl, getIssue } = await import("./github");
+      const { createSession } = await import("./devin");
+      const { createJob, findExistingActiveJob } = await import("../db/queries");
+
+      // Extract issue URL using same logic as webhook handler
+      const pattern = /https:\/\/github\.com\/[^/]+\/[^/]+\/issues\/\d+/;
+      const issueUrl = msg.text.match(pattern)?.[0] ??
+        msg.attachments.find((a) => a["title"]?.match(pattern))?.[`title`]?.match(pattern)?.[0] ??
+        null;
+
+      if (!issueUrl) {
+        await markDeadLetterRetried(env.DB, letter.id, true); // no issue URL = nothing to retry
+        continue;
+      }
+
+      const parsed = parseIssueUrl(issueUrl);
+      if (!parsed) {
+        await markDeadLetterRetried(env.DB, letter.id, true);
+        continue;
+      }
+
+      // Skip if already being handled
+      const existing = await findExistingActiveJob(env.DB, issueUrl);
+      if (existing) {
+        await markDeadLetterRetried(env.DB, letter.id, true);
+        continue;
+      }
+
+      // Re-attempt remediation
+      const issue = await getIssue(env, parsed.owner, parsed.repo, parsed.number);
+      if (!issue || issue.state !== "open") {
+        await markDeadLetterRetried(env.DB, letter.id, true);
+        continue;
+      }
+
+      const prompt = `Fix the following GitHub issue: ${issueUrl}\n\nTitle: ${issue.title}\n\nPlease investigate the issue, implement a fix, and create a pull request.`;
+      const session = await createSession(env, prompt);
+
+      await createJob(env.DB, {
+        issue_url: issueUrl,
+        issue_number: parsed.number,
+        issue_title: issue.title,
+        session_id: session.sessionId,
+        session_url: session.url,
+        triggered_by: `slack_user:${payload.user}`,
+        slack_channel: payload.channel,
+        slack_message_ts: payload.messageTs,
+      });
+
+      const { postThreadReply } = await import("./slack");
+      await postThreadReply(
+        env,
+        payload.channel,
+        payload.messageTs,
+        `🔄 Retry successful! Remediation started for issue #${parsed.number}: "${issue.title}"\n🔗 Session: ${session.url}`
+      );
+
+      await markDeadLetterRetried(env.DB, letter.id, true);
+    } catch (err) {
+      await markDeadLetterRetried(
+        env.DB,
+        letter.id,
+        false,
+        err instanceof Error ? err.message : "Retry failed"
+      );
+    }
+  }
 }
 
 async function pollSingleJob(job: Job, env: Env): Promise<void> {
