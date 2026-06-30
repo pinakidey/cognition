@@ -6,6 +6,7 @@ const SLACK_API = "https://slack.com/api";
 // not POST with JSON body. Use GET for read-only methods that require it.
 const GET_METHODS = new Set(["conversations.replies", "users.info"]);
 
+// Calls a Slack Web API method, routing GET-only methods via query params.
 async function slackApi(
   env: Env,
   method: string,
@@ -37,6 +38,7 @@ export interface SlackMessage {
   attachments: Array<Record<string, string>>;
 }
 
+// Fetches a Slack message by timestamp, falling back to thread search for replies.
 export async function getMessage(
   env: Env,
   channel: string,
@@ -99,6 +101,7 @@ export async function getMessage(
   return { text: "", attachments: [] };
 }
 
+// Returns only the text content of a Slack message.
 export async function getMessageText(
   env: Env,
   channel: string,
@@ -108,6 +111,7 @@ export async function getMessageText(
   return msg.text;
 }
 
+// Returns only the attachments array of a Slack message.
 export async function getMessageAttachments(
   env: Env,
   channel: string,
@@ -117,6 +121,7 @@ export async function getMessageAttachments(
   return msg.attachments;
 }
 
+// Posts a reply message in an existing Slack thread.
 export async function postThreadReply(
   env: Env,
   channel: string,
@@ -130,10 +135,12 @@ export async function postThreadReply(
   });
 }
 
+// Formats a Slack user ID as a mentionable link.
 export async function getUserMention(userId: string): Promise<string> {
   return `<@${userId}>`;
 }
 
+// Retrieves a Slack user's email address from their profile.
 export async function getUserEmail(
   env: Env,
   userId: string
@@ -151,6 +158,7 @@ export async function getUserEmail(
   return user?.profile?.email ?? null;
 }
 
+// Retrieves a Slack user's display name, falling back to real name or user ID.
 export async function getUserDisplayName(
   env: Env,
   userId: string

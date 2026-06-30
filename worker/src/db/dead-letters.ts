@@ -11,6 +11,7 @@ export interface DeadLetter {
   updated_at: string;
 }
 
+// Stores a failed webhook event for automatic retry with exponential backoff.
 export async function enqueueDeadLetter(
   db: D1Database,
   eventType: string,
@@ -27,6 +28,7 @@ export async function enqueueDeadLetter(
     .run();
 }
 
+// Returns pending dead letters whose next_retry_at has elapsed.
 export async function getRetryableDeadLetters(
   db: D1Database
 ): Promise<DeadLetter[]> {
@@ -42,6 +44,7 @@ export async function getRetryableDeadLetters(
   return result.results;
 }
 
+// Updates a dead letter after retry: marks resolved on success, increments backoff on failure.
 export async function markDeadLetterRetried(
   db: D1Database,
   id: number,
@@ -78,6 +81,7 @@ export async function markDeadLetterRetried(
   }
 }
 
+// Deletes resolved/exhausted dead letters older than 7 days.
 export async function cleanupOldDeadLetters(db: D1Database): Promise<void> {
   // Remove resolved/exhausted entries older than 7 days
   await db

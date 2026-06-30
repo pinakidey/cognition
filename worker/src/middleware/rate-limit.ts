@@ -4,6 +4,7 @@ import type { Env } from "../types";
 const DEFAULT_MAX_REQUESTS = 30;
 const DEFAULT_WINDOW_SECONDS = 60;
 
+// Hono middleware that enforces 30 req/min per IP via D1-backed counters.
 export async function checkRateLimit(
   c: Context<{ Bindings: Env }>,
   next: Next

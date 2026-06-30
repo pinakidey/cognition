@@ -10,6 +10,7 @@ export interface GitHubIssue {
   html_url: string;
 }
 
+// Makes an authenticated GET request to the GitHub API.
 async function githubFetch(
   env: Env,
   path: string
@@ -23,6 +24,7 @@ async function githubFetch(
   });
 }
 
+// Fetches a single GitHub issue by number.
 export async function getIssue(
   env: Env,
   owner: string,
@@ -40,6 +42,7 @@ export async function getIssue(
   return data;
 }
 
+// Checks whether any open PRs reference the given issue number.
 export async function hasOpenPullRequests(
   env: Env,
   owner: string,
@@ -58,6 +61,7 @@ export async function hasOpenPullRequests(
   return data.total_count > 0;
 }
 
+// Searches for an open PR referencing the issue, with D1-backed caching.
 export async function findPullRequestForIssue(
   env: Env,
   owner: string,
@@ -98,6 +102,7 @@ export async function findPullRequestForIssue(
   return result;
 }
 
+// Resolves a GitHub username from an email address via search API.
 export async function findGitHubUserByEmail(
   env: Env,
   email: string
@@ -131,6 +136,7 @@ export async function findGitHubUserByEmail(
   return result;
 }
 
+// Submits an APPROVE review on a GitHub pull request with attribution.
 export async function approvePullRequest(
   env: Env,
   owner: string,
@@ -158,6 +164,7 @@ export async function approvePullRequest(
   return response.ok;
 }
 
+// Adds a user as an assignee on a GitHub issue.
 export async function assignIssue(
   env: Env,
   owner: string,
@@ -184,6 +191,7 @@ export async function assignIssue(
   return response.ok;
 }
 
+// Extracts owner, repo, and PR number from a GitHub pull request URL.
 export function parsePrUrl(url: string): {
   owner: string;
   repo: string;
@@ -196,6 +204,7 @@ export function parsePrUrl(url: string): {
   return { owner: match[1], repo: match[2], number: parseInt(match[3], 10) };
 }
 
+// Extracts owner, repo, and issue number from a GitHub issue URL.
 export function parseIssueUrl(url: string): {
   owner: string;
   repo: string;

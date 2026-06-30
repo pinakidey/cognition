@@ -4,6 +4,7 @@ const DEVIN_API = "https://api.devin.ai/v1";
 const MAX_RETRIES = 3;
 const RETRY_DELAYS = [2000, 4000, 8000]; // exponential backoff
 
+// Makes an authenticated request to the Devin API with exponential-backoff retries.
 async function devinFetch(
   env: Env,
   path: string,
@@ -43,6 +44,7 @@ async function devinFetch(
   throw lastError ?? new Error("Devin API request failed after retries");
 }
 
+// Creates a new Devin AI session with the given remediation prompt.
 export async function createSession(
   env: Env,
   prompt: string
@@ -65,6 +67,7 @@ export async function createSession(
   return { sessionId: data.session_id, url: data.url };
 }
 
+// Fetches the current status and PR URL of an existing Devin session.
 export async function getSession(
   env: Env,
   sessionId: string
