@@ -64,10 +64,18 @@ app.post("/webhook/slack", verifySlackSignature, checkRateLimit, async (c) => {
     return c.json({ ok: true });
   }
 
-  // Idempotency check
+  // Idempotency check (per-user: prevents Slack retries)
   const idempotencyKey = `${channel}:${messageTs}:${user}`;
   const isDuplicate = await checkIdempotency(c.env.DB, idempotencyKey);
   if (isDuplicate) {
+    return c.json({ ok: true });
+  }
+
+  // Per-message lock: prevents concurrent reactions from different users
+  // creating duplicate sessions for the same issue
+  const messageLockKey = `msg_lock:${channel}:${messageTs}`;
+  const isLocked = await checkIdempotency(c.env.DB, messageLockKey, 3600);
+  if (isLocked) {
     return c.json({ ok: true });
   }
 

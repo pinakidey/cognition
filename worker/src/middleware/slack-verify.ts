@@ -57,6 +57,6 @@ export async function verifySlackSignature(
   }
 
   // Store raw body for downstream handlers
-  (c as any).set("rawBody", body);
+  c.set("rawBody", body);
   await next();
 }

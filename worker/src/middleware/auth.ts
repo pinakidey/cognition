@@ -19,13 +19,12 @@ function safeEqual(a: string, b: string): boolean {
     const paddedB = new Uint8Array(maxLen);
     paddedA.set(aBuf);
     paddedB.set(bBuf);
-    return (
-      aBuf.length === bBuf.length &&
-      crypto.subtle.timingSafeEqual(
-        paddedA.buffer as ArrayBuffer,
-        paddedB.buffer as ArrayBuffer
-      )
+    // Always call timingSafeEqual (no short-circuit) to avoid timing leak
+    const bytesMatch = crypto.subtle.timingSafeEqual(
+      paddedA.buffer as ArrayBuffer,
+      paddedB.buffer as ArrayBuffer
     );
+    return aBuf.length === bBuf.length && bytesMatch;
   }
 
   // Fallback: constant-time comparison (pad to equal length)
