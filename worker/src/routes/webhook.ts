@@ -14,6 +14,7 @@ const APPROVE_EMOJI = "white_check_mark";
 
 const app = new Hono<{ Bindings: Env; Variables: { rawBody: string } }>();
 
+// Extracts a GitHub issue URL from message text or attachments.
 function extractGithubIssueUrl(
   text: string,
   attachments: Array<Record<string, string>> | null
@@ -116,6 +117,7 @@ app.post("/webhook/slack", verifySlackSignature, checkRateLimit, async (c) => {
   return c.json({ ok: true });
 });
 
+// Orchestrates the full remediation flow: fetch issue, create Devin session, notify Slack.
 async function handleRemediation(
   env: Env,
   channel: string,
@@ -262,6 +264,7 @@ async function handleRemediation(
   }
 }
 
+// Extracts a GitHub pull request URL from message text or attachments.
 function extractGithubPrUrl(
   text: string,
   attachments: Array<Record<string, string>> | null
@@ -295,6 +298,7 @@ function extractGithubPrUrl(
   return null;
 }
 
+// Handles ✅ reaction: maps Slack user to GitHub, submits PR approval with attribution.
 async function handleApproval(
   env: Env,
   channel: string,

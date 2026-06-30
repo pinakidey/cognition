@@ -9,6 +9,7 @@ import { getRetryableDeadLetters, markDeadLetterRetried, cleanupOldDeadLetters }
 const STALE_TIMEOUT_MS = 60 * 60 * 1000; // 60 minutes
 const PROGRESS_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
+// Cron entry point: polls all active jobs, processes dead letters, and cleans up stale data.
 export async function pollActiveSessions(env: Env): Promise<void> {
   const activeJobs = await getActiveJobs(env.DB);
 
@@ -26,6 +27,7 @@ export async function pollActiveSessions(env: Env): Promise<void> {
   await cleanupOldDeadLetters(env.DB);
 }
 
+// Retries failed webhook events from the dead-letter queue with backoff.
 async function processDeadLetters(env: Env): Promise<void> {
   const retryable = await getRetryableDeadLetters(env.DB);
 
@@ -116,6 +118,7 @@ async function processDeadLetters(env: Env): Promise<void> {
   }
 }
 
+// Checks a single job's Devin session status and posts updates on transitions.
 async function pollSingleJob(job: Job, env: Env): Promise<void> {
   try {
     // Check for stale jobs (timeout after 60 minutes)
@@ -164,6 +167,7 @@ async function pollSingleJob(job: Job, env: Env): Promise<void> {
   }
 }
 
+// Handles session status changes (blocked, resumed, finished, error) and notifies Slack.
 async function handleStatusTransition(
   job: Job,
   session: { status: string; pull_request_url?: string },
@@ -240,6 +244,7 @@ async function handleStatusTransition(
   }
 }
 
+// Marks a job as completed with its PR URL and posts the notification to Slack.
 async function markJobCompleted(
   job: Job,
   prUrl: string,
@@ -272,6 +277,7 @@ async function markJobCompleted(
   }
 }
 
+// Returns an emoji representing the session status.
 function formatStatusEmoji(status: string): string {
   switch (status) {
     case "running":
@@ -283,10 +289,12 @@ function formatStatusEmoji(status: string): string {
   }
 }
 
+// Calculates minutes elapsed since the given ISO timestamp.
 function getElapsedMinutes(updatedAt: string): number {
   return Math.floor((Date.now() - new Date(updatedAt).getTime()) / 60000);
 }
 
+// Posts a progress update to Slack if 5+ minutes have elapsed since the last one.
 async function maybePostProgressUpdate(
   job: Job,
   session: { status: string; pull_request_url?: string },
@@ -312,6 +320,7 @@ async function maybePostProgressUpdate(
   await updateJob(env.DB, job.id, { last_status: session.status });
 }
 
+// Marks a job as timed out and notifies the Slack thread.
 async function markJobTimedOut(job: Job, env: Env): Promise<void> {
   await updateJob(env.DB, job.id, {
     status: "timed_out",

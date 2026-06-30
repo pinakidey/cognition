@@ -1,5 +1,6 @@
 const DEFAULT_TTL_SECONDS = 300; // 5 minutes
 
+// Retrieves a cached API response if it exists and hasn't expired.
 export async function getCached(
   db: D1Database,
   key: string,
@@ -15,6 +16,7 @@ export async function getCached(
   return row?.response ?? null;
 }
 
+// Stores an API response in the D1 cache (upserts on key collision).
 export async function setCache(
   db: D1Database,
   key: string,
@@ -29,6 +31,7 @@ export async function setCache(
     .run();
 }
 
+// Removes cache entries older than 10 minutes.
 export async function cleanupCache(db: D1Database): Promise<void> {
   const cutoff = Math.floor(Date.now() / 1000) - 600; // 10 min expiry for cleanup
   await db

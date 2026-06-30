@@ -1,5 +1,6 @@
 import type { Job, JobStats } from "../types";
 
+// Inserts a new remediation job record into D1.
 export async function createJob(
   db: D1Database,
   params: {
@@ -34,6 +35,7 @@ export async function createJob(
   return result!;
 }
 
+// Retrieves a single job by its primary key.
 export async function getJobById(
   db: D1Database,
   jobId: number
@@ -44,6 +46,7 @@ export async function getJobById(
     .first<Job>();
 }
 
+// Returns all jobs in pending, in_progress, or blocked state.
 export async function getActiveJobs(db: D1Database): Promise<Job[]> {
   const result = await db
     .prepare(
@@ -53,6 +56,7 @@ export async function getActiveJobs(db: D1Database): Promise<Job[]> {
   return result.results;
 }
 
+// Returns the 50 most recent jobs for dashboard display.
 export async function getAllJobs(db: D1Database): Promise<Job[]> {
   const result = await db
     .prepare("SELECT * FROM jobs ORDER BY created_at DESC LIMIT 50")
@@ -60,6 +64,7 @@ export async function getAllJobs(db: D1Database): Promise<Job[]> {
   return result.results;
 }
 
+// Partially updates a job's fields (status, PR URL, etc.) by ID.
 export async function updateJob(
   db: D1Database,
   jobId: number,
@@ -106,6 +111,7 @@ export async function updateJob(
     .run();
 }
 
+// Aggregates job counts by status for the dashboard summary.
 export async function getJobStats(db: D1Database): Promise<JobStats> {
   const result = await db
     .prepare(
@@ -136,6 +142,7 @@ export async function getJobStats(db: D1Database): Promise<JobStats> {
   );
 }
 
+// Finds an active (non-terminal) job for a given issue URL to prevent duplicates.
 export async function findExistingActiveJob(
   db: D1Database,
   issueUrl: string
@@ -148,6 +155,7 @@ export async function findExistingActiveJob(
     .first<Job>();
 }
 
+// Finds a completed job with a PR URL for a given issue (prevents redundant sessions).
 export async function findCompletedJobWithPr(
   db: D1Database,
   issueUrl: string
@@ -160,7 +168,7 @@ export async function findCompletedJobWithPr(
     .first<Job>();
 }
 
-// Idempotency helpers
+// Atomically checks and inserts an idempotency key; returns true if duplicate.
 export async function checkIdempotency(
   db: D1Database,
   key: string,
@@ -187,6 +195,7 @@ export async function checkIdempotency(
   return result.meta.changes === 0;
 }
 
+// Removes expired idempotency entries older than 1 hour.
 export async function cleanupIdempotency(db: D1Database): Promise<void> {
   // Use 3600s cutoff to respect message locks (1-hour TTL)
   const cutoff = Math.floor(Date.now() / 1000) - 3600;

@@ -1,6 +1,7 @@
 import type { Context, Next } from "hono";
 import type { Env } from "../types";
 
+// Verifies the HMAC-SHA256 signature on incoming Slack webhook requests.
 export async function verifySlackSignature(
   c: Context<{ Bindings: Env; Variables: { rawBody: string } }>,
   next: Next

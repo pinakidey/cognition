@@ -1,11 +1,7 @@
 import type { Context, Next } from "hono";
 import type { Env } from "../types";
 
-/**
- * Constant-time string comparison.
- * Uses crypto.subtle.timingSafeEqual in Workers runtime,
- * falls back to byte-by-byte comparison with constant time.
- */
+// Constant-time string comparison to prevent timing side-channel attacks.
 function safeEqual(a: string, b: string): boolean {
   const encoder = new TextEncoder();
   const aBuf = encoder.encode(a);
@@ -36,6 +32,7 @@ function safeEqual(a: string, b: string): boolean {
   return result === 0;
 }
 
+// Hono middleware that rejects requests without a valid admin API key.
 export async function verifyAdminKey(
   c: Context<{ Bindings: Env }>,
   next: Next

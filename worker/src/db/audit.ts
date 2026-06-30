@@ -7,6 +7,7 @@ export interface AuditEntry {
   details?: string;
 }
 
+// Writes a timestamped audit record (approval, denial, remediation) to D1.
 export async function logAuditEvent(
   db: D1Database,
   entry: AuditEntry
@@ -27,6 +28,7 @@ export async function logAuditEvent(
     .run();
 }
 
+// Returns the most recent audit log entries for admin inspection.
 export async function getRecentAuditLogs(
   db: D1Database,
   limit: number = 50
