@@ -223,19 +223,19 @@ export async function arePrChecksPassing(
     `/repos/${owner}/${repo}/commits/${sha}/check-runs`
   );
 
-  if (checksResponse.ok) {
-    const checks = (await checksResponse.json()) as {
-      total_count: number;
-      check_runs: Array<{ status: string; conclusion: string | null }>;
-    };
+  if (!checksResponse.ok) return { passing: false, sha };
 
-    // If there are check runs, all must be completed and successful
-    if (checks.total_count > 0) {
-      const allPassed = checks.check_runs.every(
-        (cr) => cr.status === "completed" && (cr.conclusion === "success" || cr.conclusion === "neutral" || cr.conclusion === "skipped")
-      );
-      if (!allPassed) return { passing: false, sha };
-    }
+  const checks = (await checksResponse.json()) as {
+    total_count: number;
+    check_runs: Array<{ status: string; conclusion: string | null }>;
+  };
+
+  // If there are check runs, all must be completed and successful
+  if (checks.total_count > 0) {
+    const allPassed = checks.check_runs.every(
+      (cr) => cr.status === "completed" && (cr.conclusion === "success" || cr.conclusion === "neutral" || cr.conclusion === "skipped")
+    );
+    if (!allPassed) return { passing: false, sha };
   }
 
   // If there are commit statuses, verify they pass too

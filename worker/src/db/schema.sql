@@ -88,4 +88,5 @@ CREATE TABLE IF NOT EXISTS pending_merges (
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pending_merges_unique_pr ON pending_merges(owner, repo, pr_number) WHERE status = 'pending';
 CREATE INDEX IF NOT EXISTS idx_pending_merges_status ON pending_merges(status);

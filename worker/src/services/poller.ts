@@ -157,6 +157,19 @@ async function processPendingMerges(env: Env): Promise<void> {
         } else {
           // Merge failed (conflicts, protected branch, etc.)
           await updatePendingMerge(env.DB, entry.id, "pending", true);
+
+          // After 30 attempts, mark as failed and notify
+          if (entry.attempts >= 29) {
+            await updatePendingMerge(env.DB, entry.id, "failed");
+            if (entry.slack_channel && entry.slack_message_ts) {
+              await postThreadReply(
+                env,
+                entry.slack_channel,
+                entry.slack_message_ts,
+                `⚠️ Auto-merge for PR #${entry.pr_number} failed after 30 attempts — the PR may have merge conflicts or branch protection issues. Please merge manually.`
+              );
+            }
+          }
         }
       } else {
         // Checks not passing yet — increment attempt counter

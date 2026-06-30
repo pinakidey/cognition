@@ -26,7 +26,7 @@ export async function enqueuePendingMerge(
 ): Promise<void> {
   await db
     .prepare(
-      `INSERT INTO pending_merges (pr_url, owner, repo, pr_number, slack_channel, slack_message_ts)
+      `INSERT OR IGNORE INTO pending_merges (pr_url, owner, repo, pr_number, slack_channel, slack_message_ts)
        VALUES (?, ?, ?, ?, ?, ?)`
     )
     .bind(
