@@ -6,6 +6,8 @@ import { checkIdempotency, findExistingActiveJob, findCompletedJobWithPr, create
 import { getMessageText, getMessageAttachments, postThreadReply, getUserEmail, getUserDisplayName } from "../services/slack";
 import { parseIssueUrl, parsePrUrl, getIssue, findGitHubUserByEmail, approvePullRequest, assignIssue } from "../services/github";
 import { createSession } from "../services/devin";
+import { logAuditEvent } from "../db/audit";
+import { enqueueDeadLetter } from "../db/dead-letters";
 
 const ROCKET_EMOJI = "rocket";
 const APPROVE_EMOJI = "white_check_mark";
@@ -216,6 +218,15 @@ async function handleRemediation(
       console.error("Non-critical: issue assignment failed:", assignErr);
     }
 
+    // Audit log: remediation triggered
+    await logAuditEvent(env.DB, {
+      action: "remediation_started",
+      actor_slack_id: user,
+      actor_github: ghUsername ?? undefined,
+      target: issueUrl,
+      details: `Issue #${parsed.number}: ${issue.title} → Session ${session.sessionId}`,
+    });
+
     // Notify in thread
     const mention = ghUsername ? ` (assigned to @${ghUsername})` : "";
     await postThreadReply(
@@ -226,6 +237,19 @@ async function handleRemediation(
     );
   } catch (err) {
     console.error("Error in handleRemediation:", err);
+
+    // Dead-letter queue: store failed event for retry
+    try {
+      await enqueueDeadLetter(
+        env.DB,
+        "remediation",
+        JSON.stringify({ channel, messageTs, user }),
+        err instanceof Error ? err.message : "Unknown error"
+      );
+    } catch (dlErr) {
+      console.error("Failed to enqueue dead letter:", dlErr);
+    }
+
     await postThreadReply(
       env,
       channel,
@@ -275,13 +299,32 @@ async function handleApproval(
   slackUserId: string
 ): Promise<void> {
   try {
+    // Approval allowlist check
+    if (env.APPROVAL_ALLOWLIST) {
+      const allowlist = env.APPROVAL_ALLOWLIST.split(",").map((s) => s.trim());
+      if (!allowlist.includes(slackUserId)) {
+        await postThreadReply(
+          env,
+          channel,
+          messageTs,
+          "⚠️ You are not authorized to approve PRs via Slack. Contact an admin to be added to the allowlist."
+        );
+        await logAuditEvent(env.DB, {
+          action: "approval_denied",
+          actor_slack_id: slackUserId,
+          target: `channel:${channel}:${messageTs}`,
+          details: "User not in APPROVAL_ALLOWLIST",
+        });
+        return;
+      }
+    }
+
     // Fetch message to extract PR URL
     const text = await getMessageText(env, channel, messageTs);
     const attachments = await getMessageAttachments(env, channel, messageTs);
     const prUrl = extractGithubPrUrl(text, attachments);
 
     if (!prUrl) {
-      // Not a PR message — silently ignore
       return;
     }
 
@@ -326,6 +369,16 @@ async function handleApproval(
         messageTs,
         `✅ PR #${parsed.number} approved on GitHub (by ${ghRef})`
       );
+
+      // Audit log: successful approval
+      await logAuditEvent(env.DB, {
+        action: "pr_approved",
+        actor_slack_id: slackUserId,
+        actor_email: email,
+        actor_github: ghUsername ?? undefined,
+        target: prUrl,
+        details: `PR #${parsed.number} in ${parsed.owner}/${parsed.repo}`,
+      });
     } else {
       await postThreadReply(
         env,
@@ -333,6 +386,15 @@ async function handleApproval(
         messageTs,
         `❌ Failed to approve PR #${parsed.number}. The service token may lack write access to this repo.`
       );
+
+      // Audit log: failed approval
+      await logAuditEvent(env.DB, {
+        action: "pr_approval_failed",
+        actor_slack_id: slackUserId,
+        actor_email: email,
+        target: prUrl,
+        details: "GitHub API rejected the approval request",
+      });
     }
   } catch (err) {
     console.error("Error in handleApproval:", err);

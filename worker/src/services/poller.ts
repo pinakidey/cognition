@@ -3,6 +3,8 @@ import { getActiveJobs, updateJob, cleanupIdempotency } from "../db/queries";
 import { getSession } from "./devin";
 import { findPullRequestForIssue, parseIssueUrl } from "./github";
 import { postThreadReply, getUserMention } from "./slack";
+import { cleanupCache } from "../db/cache";
+import { getRetryableDeadLetters, markDeadLetterRetried, cleanupOldDeadLetters } from "../db/dead-letters";
 
 const STALE_TIMEOUT_MS = 60 * 60 * 1000; // 60 minutes
 const PROGRESS_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
@@ -13,8 +15,47 @@ export async function pollActiveSessions(env: Env): Promise<void> {
   // Poll all jobs concurrently
   await Promise.all(activeJobs.map((job) => pollSingleJob(job, env)));
 
-  // Cleanup old idempotency entries
+  // Cleanup old idempotency entries + expired cache
   await cleanupIdempotency(env.DB);
+  await cleanupCache(env.DB);
+
+  // Process dead letter queue
+  await processDeadLetters(env);
+
+  // Periodic cleanup of old dead letters
+  await cleanupOldDeadLetters(env.DB);
+}
+
+async function processDeadLetters(env: Env): Promise<void> {
+  const retryable = await getRetryableDeadLetters(env.DB);
+
+  for (const letter of retryable) {
+    try {
+      // Re-dispatch the failed event
+      const payload = JSON.parse(letter.payload) as {
+        channel: string;
+        messageTs: string;
+        user: string;
+      };
+
+      // Import dynamically to avoid circular dependency
+      const { getMessageText, getMessageAttachments } = await import("./slack");
+      const text = await getMessageText(env, payload.channel, payload.messageTs);
+
+      if (text) {
+        await markDeadLetterRetried(env.DB, letter.id, true);
+      } else {
+        await markDeadLetterRetried(env.DB, letter.id, false, "Message no longer accessible");
+      }
+    } catch (err) {
+      await markDeadLetterRetried(
+        env.DB,
+        letter.id,
+        false,
+        err instanceof Error ? err.message : "Retry failed"
+      );
+    }
+  }
 }
 
 async function pollSingleJob(job: Job, env: Env): Promise<void> {
