@@ -18,11 +18,16 @@ async function slackApi(
   return (await response.json()) as Record<string, unknown>;
 }
 
-export async function getMessageText(
+export interface SlackMessage {
+  text: string;
+  attachments: Array<Record<string, string>>;
+}
+
+export async function getMessage(
   env: Env,
   channel: string,
   messageTs: string
-): Promise<string> {
+): Promise<SlackMessage> {
   const result = await slackApi(env, "conversations.history", {
     channel,
     latest: messageTs,
@@ -30,10 +35,26 @@ export async function getMessageText(
     limit: 1,
   });
 
-  if (!result.ok) return "";
+  if (!result.ok) return { text: "", attachments: [] };
 
-  const messages = result.messages as Array<{ text?: string }>;
-  return messages?.[0]?.text ?? "";
+  const messages = result.messages as Array<{
+    text?: string;
+    attachments?: Array<Record<string, string>>;
+  }>;
+  const msg = messages?.[0];
+  return {
+    text: msg?.text ?? "",
+    attachments: msg?.attachments ?? [],
+  };
+}
+
+export async function getMessageText(
+  env: Env,
+  channel: string,
+  messageTs: string
+): Promise<string> {
+  const msg = await getMessage(env, channel, messageTs);
+  return msg.text;
 }
 
 export async function getMessageAttachments(
@@ -41,19 +62,8 @@ export async function getMessageAttachments(
   channel: string,
   messageTs: string
 ): Promise<Array<Record<string, string>>> {
-  const result = await slackApi(env, "conversations.history", {
-    channel,
-    latest: messageTs,
-    inclusive: true,
-    limit: 1,
-  });
-
-  if (!result.ok) return [];
-
-  const messages = result.messages as Array<{
-    attachments?: Array<Record<string, string>>;
-  }>;
-  return messages?.[0]?.attachments ?? [];
+  const msg = await getMessage(env, channel, messageTs);
+  return msg.attachments;
 }
 
 export async function postThreadReply(

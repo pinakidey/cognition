@@ -31,22 +31,80 @@ async function processDeadLetters(env: Env): Promise<void> {
 
   for (const letter of retryable) {
     try {
-      // Re-dispatch the failed event
       const payload = JSON.parse(letter.payload) as {
         channel: string;
         messageTs: string;
         user: string;
       };
 
-      // Import dynamically to avoid circular dependency
-      const { getMessageText, getMessageAttachments } = await import("./slack");
-      const text = await getMessageText(env, payload.channel, payload.messageTs);
+      // Verify the message is still accessible before retrying
+      const { getMessage } = await import("./slack");
+      const msg = await getMessage(env, payload.channel, payload.messageTs);
 
-      if (text) {
-        await markDeadLetterRetried(env.DB, letter.id, true);
-      } else {
+      if (!msg.text && msg.attachments.length === 0) {
         await markDeadLetterRetried(env.DB, letter.id, false, "Message no longer accessible");
+        continue;
       }
+
+      // Re-import extraction logic and attempt to process
+      const { parseIssueUrl, getIssue } = await import("./github");
+      const { createSession } = await import("./devin");
+      const { createJob, findExistingActiveJob } = await import("../db/queries");
+
+      // Extract issue URL using same logic as webhook handler
+      const pattern = /https:\/\/github\.com\/[^/]+\/[^/]+\/issues\/\d+/;
+      const issueUrl = msg.text.match(pattern)?.[0] ??
+        msg.attachments.find((a) => a["title"]?.match(pattern))?.[`title`]?.match(pattern)?.[0] ??
+        null;
+
+      if (!issueUrl) {
+        await markDeadLetterRetried(env.DB, letter.id, true); // no issue URL = nothing to retry
+        continue;
+      }
+
+      const parsed = parseIssueUrl(issueUrl);
+      if (!parsed) {
+        await markDeadLetterRetried(env.DB, letter.id, true);
+        continue;
+      }
+
+      // Skip if already being handled
+      const existing = await findExistingActiveJob(env.DB, issueUrl);
+      if (existing) {
+        await markDeadLetterRetried(env.DB, letter.id, true);
+        continue;
+      }
+
+      // Re-attempt remediation
+      const issue = await getIssue(env, parsed.owner, parsed.repo, parsed.number);
+      if (!issue || issue.state !== "open") {
+        await markDeadLetterRetried(env.DB, letter.id, true);
+        continue;
+      }
+
+      const prompt = `Fix the following GitHub issue: ${issueUrl}\n\nTitle: ${issue.title}\n\nPlease investigate the issue, implement a fix, and create a pull request.`;
+      const session = await createSession(env, prompt);
+
+      await createJob(env.DB, {
+        issue_url: issueUrl,
+        issue_number: parsed.number,
+        issue_title: issue.title,
+        session_id: session.sessionId,
+        session_url: session.url,
+        triggered_by: `slack_user:${payload.user}`,
+        slack_channel: payload.channel,
+        slack_message_ts: payload.messageTs,
+      });
+
+      const { postThreadReply } = await import("./slack");
+      await postThreadReply(
+        env,
+        payload.channel,
+        payload.messageTs,
+        `🔄 Retry successful! Remediation started for issue #${parsed.number}: "${issue.title}"\n🔗 Session: ${session.url}`
+      );
+
+      await markDeadLetterRetried(env.DB, letter.id, true);
     } catch (err) {
       await markDeadLetterRetried(
         env.DB,

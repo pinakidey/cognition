@@ -3,7 +3,7 @@ import type { Env, SlackEventPayload } from "../types";
 import { verifySlackSignature } from "../middleware/slack-verify";
 import { checkRateLimit } from "../middleware/rate-limit";
 import { checkIdempotency, findExistingActiveJob, findCompletedJobWithPr, createJob } from "../db/queries";
-import { getMessageText, getMessageAttachments, postThreadReply, getUserEmail, getUserDisplayName } from "../services/slack";
+import { getMessage, getMessageText, getMessageAttachments, postThreadReply, getUserEmail, getUserDisplayName } from "../services/slack";
 import { parseIssueUrl, parsePrUrl, getIssue, findGitHubUserByEmail, approvePullRequest, assignIssue } from "../services/github";
 import { createSession } from "../services/devin";
 import { logAuditEvent } from "../db/audit";
@@ -123,10 +123,9 @@ async function handleRemediation(
   user: string
 ): Promise<void> {
   try {
-    // Fetch message to extract issue URL
-    const text = await getMessageText(env, channel, messageTs);
-    const attachments = await getMessageAttachments(env, channel, messageTs);
-    const issueUrl = extractGithubIssueUrl(text, attachments);
+    // Fetch message to extract issue URL (single API call)
+    const msg = await getMessage(env, channel, messageTs);
+    const issueUrl = extractGithubIssueUrl(msg.text, msg.attachments);
 
     if (!issueUrl) {
       console.log(`No GitHub issue URL found in message ${messageTs}`);
@@ -319,10 +318,9 @@ async function handleApproval(
       }
     }
 
-    // Fetch message to extract PR URL
-    const text = await getMessageText(env, channel, messageTs);
-    const attachments = await getMessageAttachments(env, channel, messageTs);
-    const prUrl = extractGithubPrUrl(text, attachments);
+    // Fetch message to extract PR URL (single API call)
+    const msg = await getMessage(env, channel, messageTs);
+    const prUrl = extractGithubPrUrl(msg.text, msg.attachments);
 
     if (!prUrl) {
       return;
