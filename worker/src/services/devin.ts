@@ -75,21 +75,33 @@ export async function getSession(
     throw new Error(`Failed to get session ${sessionId}: ${response.status}`);
   }
 
-  const data = (await response.json()) as {
+  const rawData = await response.json();
+  const data = rawData as {
     session_id: string;
     status: string;
     url: string;
     structured_output?: {
       pull_request_url?: string;
-    };
+    } | null;
+    pull_request?: {
+      url?: string;
+      html_url?: string;
+    } | null;
     title?: string;
   };
+
+  // Extract PR URL — prefer html_url (browser link) over url (API endpoint)
+  const prUrl =
+    data.structured_output?.pull_request_url ??
+    data.pull_request?.html_url ??
+    data.pull_request?.url ??
+    undefined;
 
   return {
     session_id: data.session_id,
     status: data.status,
     url: data.url,
-    pull_request_url: data.structured_output?.pull_request_url,
+    pull_request_url: prUrl,
     title: data.title,
   };
 }

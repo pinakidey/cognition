@@ -1,9 +1,11 @@
 import type { Env, Job } from "../types";
 import { getActiveJobs, updateJob, cleanupIdempotency } from "../db/queries";
 import { getSession } from "./devin";
+import { findPullRequestForIssue, parseIssueUrl } from "./github";
 import { postThreadReply, getUserMention } from "./slack";
 
 const STALE_TIMEOUT_MS = 60 * 60 * 1000; // 60 minutes
+const PROGRESS_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
 export async function pollActiveSessions(env: Env): Promise<void> {
   const activeJobs = await getActiveJobs(env.DB);
@@ -28,10 +30,36 @@ async function pollSingleJob(job: Job, env: Env): Promise<void> {
 
     const session = await getSession(env, job.session_id);
 
-    // Only act on status transitions
-    if (session.status === job.last_status) return;
+    // PR detected — treat as completed
+    if (session.pull_request_url && !job.pr_url) {
+      await markJobCompleted(job, session.pull_request_url, env);
+      return;
+    }
 
-    await handleStatusTransition(job, session, env);
+    // Fallback: check GitHub directly for PRs (Devin v1 API doesn't
+    // populate pull_request until session finishes)
+    if (!job.pr_url) {
+      const parsed = parseIssueUrl(job.issue_url);
+      if (parsed) {
+        const ghPrUrl = await findPullRequestForIssue(
+          env,
+          parsed.owner,
+          parsed.repo,
+          parsed.number
+        );
+        if (ghPrUrl) {
+          await markJobCompleted(job, ghPrUrl, env);
+          return;
+        }
+      }
+    }
+
+    if (session.status !== job.last_status) {
+      await handleStatusTransition(job, session, env);
+    } else {
+      // No transition — post periodic progress update every 5 minutes
+      await maybePostProgressUpdate(job, session, env);
+    }
   } catch (err) {
     console.error(`Error polling job ${job.id}:`, err);
   }
@@ -79,37 +107,19 @@ async function handleStatusTransition(
       );
     }
   } else if (session.status === "finished" || session.status === "stopped") {
-    if (session.pull_request_url) {
-      await updateJob(env.DB, job.id, {
-        status: "completed",
-        pr_url: session.pull_request_url,
-        last_status: session.status,
-      });
-      if (hasSlack) {
-        const mention = job.triggered_by?.startsWith("slack_user:")
-          ? await getUserMention(job.triggered_by.replace("slack_user:", ""))
-          : "";
-        const mentionText = mention ? ` ${mention} — ready for your review.` : "";
-        await postThreadReply(
-          env,
-          job.slack_channel!,
-          job.slack_message_ts!,
-          `✅ PR ready for issue #${job.issue_number}: ${session.pull_request_url}${mentionText}`
-        );
-      }
-    } else {
-      await updateJob(env.DB, job.id, {
-        status: "finished_no_pr",
-        last_status: session.status,
-      });
-      if (hasSlack) {
-        await postThreadReply(
-          env,
-          job.slack_channel!,
-          job.slack_message_ts!,
-          `⚠️ Session finished for issue #${job.issue_number} without creating a PR.`
-        );
-      }
+    // PR case is already handled by markJobCompleted above (early return)
+    // This path only runs if session ended without a PR
+    await updateJob(env.DB, job.id, {
+      status: "finished_no_pr",
+      last_status: session.status,
+    });
+    if (hasSlack) {
+      await postThreadReply(
+        env,
+        job.slack_channel!,
+        job.slack_message_ts!,
+        `⚠️ Session finished for issue #${job.issue_number} without creating a PR.`
+      );
     }
   } else if (session.status === "error") {
     await updateJob(env.DB, job.id, {
@@ -129,6 +139,78 @@ async function handleStatusTransition(
     // Non-terminal, non-blocked status change — just track it
     await updateJob(env.DB, job.id, { last_status: session.status });
   }
+}
+
+async function markJobCompleted(
+  job: Job,
+  prUrl: string,
+  env: Env
+): Promise<void> {
+  await updateJob(env.DB, job.id, {
+    status: "completed",
+    pr_url: prUrl,
+    last_status: "finished",
+  });
+
+  if (job.slack_channel && job.slack_message_ts) {
+    const triggeredBy = job.triggered_by ?? "";
+    // Only @-mention if triggered by a human (not a bot)
+    let mentionText = "";
+    if (triggeredBy.startsWith("slack_user:")) {
+      const userId = triggeredBy.replace("slack_user:", "");
+      const mention = await getUserMention(userId);
+      if (mention) {
+        mentionText = ` ${mention} — ready for your review.`;
+      }
+    }
+
+    await postThreadReply(
+      env,
+      job.slack_channel,
+      job.slack_message_ts,
+      `✅ PR ready for issue #${job.issue_number}: ${prUrl}${mentionText}`
+    );
+  }
+}
+
+function formatStatusEmoji(status: string): string {
+  switch (status) {
+    case "running":
+      return "🔧";
+    case "blocked":
+      return "⏸️";
+    default:
+      return "🔄";
+  }
+}
+
+function getElapsedMinutes(updatedAt: string): number {
+  return Math.floor((Date.now() - new Date(updatedAt).getTime()) / 60000);
+}
+
+async function maybePostProgressUpdate(
+  job: Job,
+  session: { status: string; pull_request_url?: string },
+  env: Env
+): Promise<void> {
+  const elapsed = Date.now() - new Date(job.updated_at).getTime();
+  if (elapsed < PROGRESS_INTERVAL_MS) return;
+
+  const hasSlack = Boolean(job.slack_channel && job.slack_message_ts);
+  if (!hasSlack) return;
+
+  const minutes = getElapsedMinutes(job.created_at);
+  const emoji = formatStatusEmoji(session.status);
+
+  await postThreadReply(
+    env,
+    job.slack_channel!,
+    job.slack_message_ts!,
+    `${emoji} Progress update (${minutes}min elapsed): Session status is *${session.status}* for issue #${job.issue_number}`
+  );
+
+  // Touch updated_at to reset the 5-minute timer
+  await updateJob(env.DB, job.id, { last_status: session.status });
 }
 
 async function markJobTimedOut(job: Job, env: Env): Promise<void> {
