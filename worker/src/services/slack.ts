@@ -28,24 +28,61 @@ export async function getMessage(
   channel: string,
   messageTs: string
 ): Promise<SlackMessage> {
-  const result = await slackApi(env, "conversations.history", {
+  // Try channel history first (works for top-level messages)
+  const histResult = await slackApi(env, "conversations.history", {
     channel,
     latest: messageTs,
     inclusive: true,
     limit: 1,
   });
 
-  if (!result.ok) return { text: "", attachments: [] };
+  if (histResult.ok) {
+    const messages = histResult.messages as Array<{
+      text?: string;
+      attachments?: Array<Record<string, string>>;
+      ts?: string;
+    }>;
+    const msg = messages?.[0];
+    if (msg?.ts === messageTs) {
+      return { text: msg.text ?? "", attachments: msg.attachments ?? [] };
+    }
+  }
 
-  const messages = result.messages as Array<{
-    text?: string;
-    attachments?: Array<Record<string, string>>;
-  }>;
-  const msg = messages?.[0];
-  return {
-    text: msg?.text ?? "",
-    attachments: msg?.attachments ?? [],
-  };
+  // Not found in channel history — likely a thread reply.
+  // Search recent top-level messages' threads to find the target.
+  const nearbyResult = await slackApi(env, "conversations.history", {
+    channel,
+    latest: messageTs,
+    inclusive: false,
+    limit: 5,
+  });
+
+  if (nearbyResult.ok) {
+    const nearby = nearbyResult.messages as Array<{
+      ts?: string;
+      reply_count?: number;
+    }>;
+    for (const parent of nearby) {
+      if (!parent.ts || !parent.reply_count) continue;
+      const threadResult = await slackApi(env, "conversations.replies", {
+        channel,
+        ts: parent.ts,
+      });
+      if (threadResult.ok) {
+        const threadMsgs = threadResult.messages as Array<{
+          text?: string;
+          attachments?: Array<Record<string, string>>;
+          ts?: string;
+        }>;
+        const target = threadMsgs?.find((m) => m.ts === messageTs);
+        if (target) {
+          return { text: target.text ?? "", attachments: target.attachments ?? [] };
+        }
+      }
+    }
+  }
+
+  return { text: "", attachments: [] };
 }
 
 export async function getMessageText(
