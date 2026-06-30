@@ -83,6 +83,68 @@ export async function findPullRequestForIssue(
   return null;
 }
 
+export async function findGitHubUserByEmail(
+  env: Env,
+  email: string
+): Promise<string | null> {
+  const response = await githubFetch(
+    env,
+    `/search/users?q=${encodeURIComponent(email)}+in:email`
+  );
+
+  if (!response.ok) return null;
+
+  const data = (await response.json()) as {
+    total_count: number;
+    items: Array<{ login: string }>;
+  };
+
+  if (data.total_count > 0 && data.items.length > 0) {
+    return data.items[0].login;
+  }
+
+  return null;
+}
+
+export async function approvePullRequest(
+  env: Env,
+  owner: string,
+  repo: string,
+  prNumber: number,
+  body: string
+): Promise<boolean> {
+  const response = await fetch(
+    `${GITHUB_API}/repos/${owner}/${repo}/pulls/${prNumber}/reviews`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `token ${env.GH_TOKEN}`,
+        Accept: "application/vnd.github.v3+json",
+        "User-Agent": "devin-remediation-service",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        event: "APPROVE",
+        body,
+      }),
+    }
+  );
+
+  return response.ok;
+}
+
+export function parsePrUrl(url: string): {
+  owner: string;
+  repo: string;
+  number: number;
+} | null {
+  const match = url.match(
+    /https:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/
+  );
+  if (!match) return null;
+  return { owner: match[1], repo: match[2], number: parseInt(match[3], 10) };
+}
+
 export function parseIssueUrl(url: string): {
   owner: string;
   repo: string;

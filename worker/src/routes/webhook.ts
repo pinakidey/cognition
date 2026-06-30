@@ -3,11 +3,12 @@ import type { Env, SlackEventPayload } from "../types";
 import { verifySlackSignature } from "../middleware/slack-verify";
 import { checkRateLimit } from "../middleware/rate-limit";
 import { checkIdempotency, findExistingActiveJob, findCompletedJobWithPr, createJob } from "../db/queries";
-import { getMessageText, getMessageAttachments, postThreadReply } from "../services/slack";
-import { parseIssueUrl, getIssue } from "../services/github";
+import { getMessageText, getMessageAttachments, postThreadReply, getUserEmail, getUserDisplayName } from "../services/slack";
+import { parseIssueUrl, parsePrUrl, getIssue, findGitHubUserByEmail, approvePullRequest } from "../services/github";
 import { createSession } from "../services/devin";
 
 const ROCKET_EMOJI = "rocket";
+const APPROVE_EMOJI = "white_check_mark";
 
 const app = new Hono<{ Bindings: Env; Variables: { rawBody: string } }>();
 
@@ -61,14 +62,21 @@ app.post("/webhook/slack", verifySlackSignature, checkRateLimit, async (c) => {
     return c.json({ ok: true });
   }
 
-  // Only process rocket reactions
-  if (event.reaction !== ROCKET_EMOJI) {
-    return c.json({ ok: true });
-  }
-
   const channel = event.item.channel;
   const messageTs = event.item.ts;
   const user = event.user;
+
+  // Route by reaction type
+  if (event.reaction === APPROVE_EMOJI) {
+    c.executionCtx.waitUntil(
+      handleApproval(c.env, channel, messageTs, user)
+    );
+    return c.json({ ok: true });
+  }
+
+  if (event.reaction !== ROCKET_EMOJI) {
+    return c.json({ ok: true });
+  }
 
   // Channel restriction
   if (c.env.SLACK_CHANNEL_ID && channel !== c.env.SLACK_CHANNEL_ID) {
@@ -201,6 +209,110 @@ async function handleRemediation(
       messageTs,
       `❌ An internal error occurred while processing this reaction. Please try again.`
     );
+  }
+}
+
+function extractGithubPrUrl(
+  text: string,
+  attachments: Array<Record<string, string>> | null
+): string | null {
+  const pattern = /https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+/;
+
+  // Check attachment title first
+  if (attachments) {
+    for (const att of attachments) {
+      const title = att["title"] ?? "";
+      const titleMatch = title.match(pattern);
+      if (titleMatch) return titleMatch[0];
+    }
+  }
+
+  // Try message text
+  const match = text.match(pattern);
+  if (match) return match[0];
+
+  // Fallback to other attachment fields
+  if (attachments) {
+    for (const att of attachments) {
+      for (const field of ["title_link", "fallback", "text"]) {
+        const val = att[field] ?? "";
+        const attMatch = val.match(pattern);
+        if (attMatch) return attMatch[0];
+      }
+    }
+  }
+
+  return null;
+}
+
+async function handleApproval(
+  env: Env,
+  channel: string,
+  messageTs: string,
+  slackUserId: string
+): Promise<void> {
+  try {
+    // Fetch message to extract PR URL
+    const text = await getMessageText(env, channel, messageTs);
+    const attachments = await getMessageAttachments(env, channel, messageTs);
+    const prUrl = extractGithubPrUrl(text, attachments);
+
+    if (!prUrl) {
+      // Not a PR message — silently ignore
+      return;
+    }
+
+    const parsed = parsePrUrl(prUrl);
+    if (!parsed) return;
+
+    // Look up Slack user's email
+    const email = await getUserEmail(env, slackUserId);
+    if (!email) {
+      await postThreadReply(
+        env,
+        channel,
+        messageTs,
+        "⚠️ Could not find your email in Slack profile. Please ensure your email is set to approve PRs."
+      );
+      return;
+    }
+
+    // Find corresponding GitHub user
+    const ghUsername = await findGitHubUserByEmail(env, email);
+    const displayName = await getUserDisplayName(env, slackUserId);
+
+    // Build attribution message
+    const attribution = ghUsername
+      ? `Approved by @${ghUsername} (${displayName}) via Slack ✅ reaction`
+      : `Approved by ${displayName} (${email}) via Slack ✅ reaction`;
+
+    // Submit the approval
+    const success = await approvePullRequest(
+      env,
+      parsed.owner,
+      parsed.repo,
+      parsed.number,
+      attribution
+    );
+
+    if (success) {
+      const ghRef = ghUsername ? `@${ghUsername}` : displayName;
+      await postThreadReply(
+        env,
+        channel,
+        messageTs,
+        `✅ PR #${parsed.number} approved on GitHub (by ${ghRef})`
+      );
+    } else {
+      await postThreadReply(
+        env,
+        channel,
+        messageTs,
+        `❌ Failed to approve PR #${parsed.number}. The service token may lack write access to this repo.`
+      );
+    }
+  } catch (err) {
+    console.error("Error in handleApproval:", err);
   }
 }
 

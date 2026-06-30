@@ -72,3 +72,38 @@ export async function postThreadReply(
 export async function getUserMention(userId: string): Promise<string> {
   return `<@${userId}>`;
 }
+
+export async function getUserEmail(
+  env: Env,
+  userId: string
+): Promise<string | null> {
+  const result = await slackApi(env, "users.info", {
+    user: userId,
+  });
+
+  if (!result.ok) return null;
+
+  const user = result.user as {
+    profile?: { email?: string };
+  } | undefined;
+
+  return user?.profile?.email ?? null;
+}
+
+export async function getUserDisplayName(
+  env: Env,
+  userId: string
+): Promise<string> {
+  const result = await slackApi(env, "users.info", {
+    user: userId,
+  });
+
+  if (!result.ok) return userId;
+
+  const user = result.user as {
+    real_name?: string;
+    profile?: { display_name?: string };
+  } | undefined;
+
+  return user?.profile?.display_name || user?.real_name || userId;
+}
