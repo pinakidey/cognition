@@ -2,19 +2,33 @@ import type { Env } from "../types";
 
 const SLACK_API = "https://slack.com/api";
 
+// Some Slack API methods (e.g. conversations.replies) only accept GET with query params,
+// not POST with JSON body. Use GET for read-only methods that require it.
+const GET_METHODS = new Set(["conversations.replies", "users.info"]);
+
 async function slackApi(
   env: Env,
   method: string,
   params: Record<string, string | number | boolean>
 ): Promise<Record<string, unknown>> {
-  const response = await fetch(`${SLACK_API}/${method}`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${env.SLACK_BOT_TOKEN}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(params),
-  });
+  let response: Response;
+  if (GET_METHODS.has(method)) {
+    const qs = new URLSearchParams(
+      Object.entries(params).map(([k, v]): [string, string] => [k, String(v)])
+    ).toString();
+    response = await fetch(`${SLACK_API}/${method}?${qs}`, {
+      headers: { Authorization: `Bearer ${env.SLACK_BOT_TOKEN}` },
+    });
+  } else {
+    response = await fetch(`${SLACK_API}/${method}`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.SLACK_BOT_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(params),
+    });
+  }
   return (await response.json()) as Record<string, unknown>;
 }
 
