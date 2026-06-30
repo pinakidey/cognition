@@ -128,12 +128,18 @@ async function processPendingMerges(env: Env): Promise<void> {
 
   for (const entry of pending) {
     try {
-      const { passing, sha, merged: alreadyMerged } = await arePrChecksPassing(
+      const { passing, sha, merged: alreadyMerged, error } = await arePrChecksPassing(
         env,
         entry.owner,
         entry.repo,
         entry.pr_number
       );
+
+      // Transient API error — treat like a caught exception (retry later)
+      if (error) {
+        await updatePendingMerge(env.DB, entry.id, "pending", true);
+        continue;
+      }
 
       // PR was already merged (manually or by another process)
       if (alreadyMerged) {

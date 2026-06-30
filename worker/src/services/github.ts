@@ -197,13 +197,13 @@ export async function arePrChecksPassing(
   owner: string,
   repo: string,
   prNumber: number
-): Promise<{ passing: boolean; sha: string | null; merged?: boolean }> {
+): Promise<{ passing: boolean; sha: string | null; merged?: boolean; error?: boolean }> {
   // Get the PR to find the head SHA
   const prResponse = await githubFetch(
     env,
     `/repos/${owner}/${repo}/pulls/${prNumber}`
   );
-  if (!prResponse.ok) return { passing: false, sha: null };
+  if (!prResponse.ok) return { passing: false, sha: null, error: true };
 
   const pr = (await prResponse.json()) as { head: { sha: string }; state: string; merged: boolean };
 
