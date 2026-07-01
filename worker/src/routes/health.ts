@@ -14,6 +14,49 @@ app.get("/health", async (c) => {
     checks.database = "error";
   }
 
+  // Verify GitHub API connectivity (rate limit endpoint is lightweight)
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    try {
+      const resp = await fetch("https://api.github.com/rate_limit", {
+        headers: {
+          Authorization: `token ${c.env.GH_TOKEN}`,
+          "User-Agent": "devin-remediation-service",
+        },
+        signal: controller.signal,
+      });
+      checks.github = resp.ok ? "ok" : "degraded";
+    } finally {
+      clearTimeout(timeout);
+    }
+  } catch {
+    checks.github = "error";
+  }
+
+  // Verify Slack API connectivity
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    try {
+      const resp = await fetch("https://slack.com/api/auth.test", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${c.env.SLACK_BOT_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+        body: "{}",
+        signal: controller.signal,
+      });
+      const data = (await resp.json()) as { ok: boolean };
+      checks.slack = data.ok ? "ok" : "degraded";
+    } finally {
+      clearTimeout(timeout);
+    }
+  } catch {
+    checks.slack = "error";
+  }
+
   const overallStatus = Object.values(checks).every((v) => v === "ok")
     ? "ok"
     : "degraded";

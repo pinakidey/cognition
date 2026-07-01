@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { Hono } from "hono";
 import type { Env } from "../src/types";
 import { healthRoutes } from "../src/routes/health";
@@ -23,7 +23,27 @@ describe("Health endpoint", () => {
   const app = new Hono<{ Bindings: Env }>();
   app.route("/", healthRoutes);
 
-  it("returns ok status when DB is healthy", async () => {
+  const originalFetch = globalThis.fetch;
+
+  beforeEach(() => {
+    // Mock global fetch to simulate external API success
+    globalThis.fetch = vi.fn(async (url: string | URL | Request) => {
+      const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
+      if (urlStr.includes("api.github.com")) {
+        return new Response(JSON.stringify({}), { status: 200 });
+      }
+      if (urlStr.includes("slack.com")) {
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      }
+      return new Response("", { status: 500 });
+    }) as typeof fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it("returns ok status when all checks pass", async () => {
     const env = createMockEnv();
     const res = await app.request("/health", {}, env);
     expect(res.status).toBe(200);
@@ -31,8 +51,11 @@ describe("Health endpoint", () => {
     const body = await res.json() as Record<string, unknown>;
     expect(body.status).toBe("ok");
     expect(body.service).toBe("devin-remediation-service");
-    expect((body.checks as Record<string, string>).worker).toBe("ok");
-    expect((body.checks as Record<string, string>).database).toBe("ok");
+    const checks = body.checks as Record<string, string>;
+    expect(checks.worker).toBe("ok");
+    expect(checks.database).toBe("ok");
+    expect(checks.github).toBe("ok");
+    expect(checks.slack).toBe("ok");
     expect(body.timestamp).toBeDefined();
   });
 
@@ -47,5 +70,26 @@ describe("Health endpoint", () => {
     const body = await res.json() as Record<string, unknown>;
     expect(body.status).toBe("degraded");
     expect((body.checks as Record<string, string>).database).toBe("error");
+  });
+
+  it("returns degraded when GitHub API is down", async () => {
+    globalThis.fetch = vi.fn(async (url: string | URL | Request) => {
+      const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
+      if (urlStr.includes("api.github.com")) {
+        return new Response("", { status: 500 });
+      }
+      if (urlStr.includes("slack.com")) {
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      }
+      return new Response("", { status: 500 });
+    }) as typeof fetch;
+
+    const env = createMockEnv();
+    const res = await app.request("/health", {}, env);
+    expect(res.status).toBe(503);
+
+    const body = await res.json() as Record<string, unknown>;
+    expect(body.status).toBe("degraded");
+    expect((body.checks as Record<string, string>).github).toBe("degraded");
   });
 });

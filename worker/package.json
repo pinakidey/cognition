@@ -12,7 +12,7 @@
     "db:migrate": "wrangler d1 execute remediation-db --file=src/db/schema.sql"
   },
   "dependencies": {
-    "hono": "^4.4.0"
+    "hono": "4.12.26"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.5.0",

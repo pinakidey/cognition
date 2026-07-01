@@ -3,6 +3,7 @@ import type { DevinSession, Env } from "../types";
 const DEVIN_API = "https://api.devin.ai/v1";
 const MAX_RETRIES = 3;
 const RETRY_DELAYS = [2000, 4000, 8000]; // exponential backoff
+const FETCH_TIMEOUT_MS = 15_000;
 
 // Makes an authenticated request to the Devin API with exponential-backoff retries.
 async function devinFetch(
@@ -14,14 +15,23 @@ async function devinFetch(
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
-      const response = await fetch(`${DEVIN_API}${path}`, {
-        ...options,
-        headers: {
-          Authorization: `Bearer ${env.DEVIN_API_KEY}`,
-          "Content-Type": "application/json",
-          ...options.headers,
-        },
-      });
+      const controller = new AbortController();
+      const fetchTimeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+      let response: Response;
+      try {
+        response = await fetch(`${DEVIN_API}${path}`, {
+          ...options,
+          headers: {
+            Authorization: `Bearer ${env.DEVIN_API_KEY}`,
+            "Content-Type": "application/json",
+            ...options.headers,
+          },
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(fetchTimeout);
+      }
 
       if (response.status >= 500) {
         lastError = new Error(`Devin API ${response.status}: ${await response.text()}`);
@@ -32,7 +42,7 @@ async function devinFetch(
         throw lastError;
       }
 
-      return response;
+      return response!;
     } catch (err) {
       lastError = err as Error;
       if (attempt < MAX_RETRIES - 1) {

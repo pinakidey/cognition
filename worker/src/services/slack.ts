@@ -5,6 +5,7 @@ const SLACK_API = "https://slack.com/api";
 // Some Slack API methods (e.g. conversations.replies) only accept GET with query params,
 // not POST with JSON body. Use GET for read-only methods that require it.
 const GET_METHODS = new Set(["conversations.replies", "users.info"]);
+const FETCH_TIMEOUT_MS = 10_000;
 
 // Calls a Slack Web API method, routing GET-only methods via query params.
 async function slackApi(
@@ -12,25 +13,43 @@ async function slackApi(
   method: string,
   params: Record<string, string | number | boolean>
 ): Promise<Record<string, unknown>> {
-  let response: Response;
-  if (GET_METHODS.has(method)) {
-    const qs = new URLSearchParams(
-      Object.entries(params).map(([k, v]): [string, string] => [k, String(v)])
-    ).toString();
-    response = await fetch(`${SLACK_API}/${method}?${qs}`, {
-      headers: { Authorization: `Bearer ${env.SLACK_BOT_TOKEN}` },
-    });
-  } else {
-    response = await fetch(`${SLACK_API}/${method}`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${env.SLACK_BOT_TOKEN}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(params),
-    });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+
+  try {
+    let response: Response;
+    if (GET_METHODS.has(method)) {
+      const qs = new URLSearchParams(
+        Object.entries(params).map(([k, v]): [string, string] => [k, String(v)])
+      ).toString();
+      response = await fetch(`${SLACK_API}/${method}?${qs}`, {
+        headers: { Authorization: `Bearer ${env.SLACK_BOT_TOKEN}` },
+        signal: controller.signal,
+      });
+    } else {
+      response = await fetch(`${SLACK_API}/${method}`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${env.SLACK_BOT_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(params),
+        signal: controller.signal,
+      });
+    }
+
+    if (!response.ok) {
+      console.error(`Slack API ${method} returned HTTP ${response.status}`);
+    }
+
+    const data = (await response.json()) as Record<string, unknown>;
+    if (!data.ok) {
+      console.error(`Slack API ${method} error: ${data.error ?? "unknown"}`);
+    }
+    return data;
+  } finally {
+    clearTimeout(timeout);
   }
-  return (await response.json()) as Record<string, unknown>;
 }
 
 export interface SlackMessage {
@@ -70,7 +89,7 @@ export async function getMessage(
     channel,
     latest: messageTs,
     inclusive: false,
-    limit: 5,
+    limit: 20,
   });
 
   if (nearbyResult.ok) {
@@ -136,7 +155,7 @@ export async function postThreadReply(
 }
 
 // Formats a Slack user ID as a mentionable link.
-export async function getUserMention(userId: string): Promise<string> {
+export function getUserMention(userId: string): string {
   return `<@${userId}>`;
 }
 
@@ -175,4 +194,20 @@ export async function getUserDisplayName(
   } | undefined;
 
   return user?.profile?.display_name || user?.real_name || userId;
+}
+
+// Checks whether a Slack user ID belongs to a bot.
+export async function isSlackBot(
+  env: Env,
+  userId: string
+): Promise<boolean> {
+  const result = await slackApi(env, "users.info", { user: userId });
+  if (!result.ok) return false;
+
+  const user = result.user as {
+    is_bot?: boolean;
+    id?: string;
+  } | undefined;
+
+  return user?.is_bot === true;
 }

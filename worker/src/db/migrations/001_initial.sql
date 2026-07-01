@@ -19,7 +19,6 @@ CREATE TABLE IF NOT EXISTS jobs (
 
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
 CREATE INDEX IF NOT EXISTS idx_jobs_issue_url ON jobs(issue_url);
-CREATE INDEX IF NOT EXISTS idx_jobs_session_id ON jobs(session_id);
 
 CREATE TABLE IF NOT EXISTS rate_limits (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

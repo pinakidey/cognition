@@ -37,10 +37,9 @@ export async function verifyAdminKey(
   c: Context<{ Bindings: Env }>,
   next: Next
 ): Promise<Response | void> {
-  // If no admin key is configured, allow unrestricted access
+  // If no admin key is configured, deny all access
   if (!c.env.ADMIN_API_KEY) {
-    await next();
-    return;
+    return c.json({ error: "Admin API key not configured" }, 503);
   }
 
   const authHeader = c.req.header("authorization") ?? "";

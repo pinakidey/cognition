@@ -7,6 +7,11 @@ export interface AuditEntry {
   details?: string;
 }
 
+export interface AuditLogRow extends AuditEntry {
+  id: number;
+  created_at: string;
+}
+
 // Writes a timestamped audit record (approval, denial, remediation) to D1.
 export async function logAuditEvent(
   db: D1Database,
@@ -32,10 +37,10 @@ export async function logAuditEvent(
 export async function getRecentAuditLogs(
   db: D1Database,
   limit: number = 50
-): Promise<AuditEntry[]> {
+): Promise<AuditLogRow[]> {
   const result = await db
     .prepare("SELECT * FROM audit_log ORDER BY created_at DESC LIMIT ?")
     .bind(limit)
-    .all<AuditEntry>();
+    .all<AuditLogRow>();
   return result.results;
 }
