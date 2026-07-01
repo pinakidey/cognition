@@ -2,6 +2,26 @@
 
 Event-driven issue remediation service that uses the [Devin API](https://docs.devin.ai/api-reference/overview) to automatically fix GitHub issues triggered by human approval in Slack.
 
+## Table of Contents
+
+- [How It All Comes Together](#how-it-all-comes-together)
+- [Business Impact](#business-impact)
+- [Rated by Devin](#rated-by-devin)
+- [Tech Stack](#tech-stack)
+- [Live Deployment](#live-deployment)
+- [Architecture](#architecture)
+- [Project Structure](#project-structure)
+- [Endpoints](#endpoints)
+- [Devin API Endpoints Used](#devin-api-endpoints-used)
+- [How It Works](#how-it-works)
+- [Monthly Cost Estimate](#monthly-cost-estimate)
+- [Configuration](#configuration)
+- [Deployment](#deployment)
+- [Local Development](#local-development)
+- [Security](#security)
+- [Observability](#observability)
+- [Testing](#testing)
+
 ## How It All Comes Together
 
 ![Workflow](doc/workflow-illustration.png)
