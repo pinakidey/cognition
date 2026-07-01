@@ -295,6 +295,13 @@ async function handleApproval(
     const parsed = parsePrUrl(prUrl);
     if (!parsed) return;
 
+    // Restrict approvals to configured repository
+    const configuredRepo = env.GITHUB_REPO;
+    if (configuredRepo && `${parsed.owner}/${parsed.repo}` !== configuredRepo) {
+      logInfo("approval_repo_mismatch", { repo: `${parsed.owner}/${parsed.repo}`, configured: configuredRepo });
+      return;
+    }
+
     // Look up Slack user's email
     const email = await getUserEmail(env, slackUserId);
     if (!email) {

@@ -62,7 +62,8 @@ app.get("/", async (c) => {
   const escapeHtml = (s: string) =>
     s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 
-  const page = parseInt(new URL(c.req.url).searchParams.get("page") ?? "1", 10);
+  const rawPage = parseInt(new URL(c.req.url).searchParams.get("page") ?? "1", 10);
+  const page = Number.isNaN(rawPage) ? 1 : rawPage;
   const pageSize = 25;
   const totalPages = Math.max(1, Math.ceil(jobs.length / pageSize));
   const currentPage = Math.max(1, Math.min(page, totalPages));

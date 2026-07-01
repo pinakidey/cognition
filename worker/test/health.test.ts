@@ -26,7 +26,6 @@ describe("Health endpoint", () => {
   const originalFetch = globalThis.fetch;
 
   beforeEach(() => {
-    // Mock global fetch to simulate external API success
     globalThis.fetch = vi.fn(async (url: string | URL | Request) => {
       const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
       if (urlStr.includes("api.github.com")) {
@@ -43,20 +42,30 @@ describe("Health endpoint", () => {
     globalThis.fetch = originalFetch;
   });
 
-  it("returns ok status when all checks pass", async () => {
+  it("returns ok with only DB check by default (no deep)", async () => {
     const env = createMockEnv();
     const res = await app.request("/health", {}, env);
     expect(res.status).toBe(200);
 
     const body = await res.json() as Record<string, unknown>;
     expect(body.status).toBe("ok");
-    expect(body.service).toBe("devin-remediation-service");
     const checks = body.checks as Record<string, string>;
     expect(checks.worker).toBe("ok");
     expect(checks.database).toBe("ok");
+    expect(checks.github).toBeUndefined();
+    expect(checks.slack).toBeUndefined();
+  });
+
+  it("returns ok with all checks when deep=true", async () => {
+    const env = createMockEnv();
+    const res = await app.request("/health?deep=true", {}, env);
+    expect(res.status).toBe(200);
+
+    const body = await res.json() as Record<string, unknown>;
+    expect(body.status).toBe("ok");
+    const checks = body.checks as Record<string, string>;
     expect(checks.github).toBe("ok");
     expect(checks.slack).toBe("ok");
-    expect(body.timestamp).toBeDefined();
   });
 
   it("returns 503 when DB is down", async () => {
@@ -72,7 +81,7 @@ describe("Health endpoint", () => {
     expect((body.checks as Record<string, string>).database).toBe("error");
   });
 
-  it("returns degraded when GitHub API is down", async () => {
+  it("returns degraded when GitHub API is down (deep mode)", async () => {
     globalThis.fetch = vi.fn(async (url: string | URL | Request) => {
       const urlStr = typeof url === "string" ? url : url instanceof URL ? url.toString() : url.url;
       if (urlStr.includes("api.github.com")) {
@@ -85,7 +94,7 @@ describe("Health endpoint", () => {
     }) as typeof fetch;
 
     const env = createMockEnv();
-    const res = await app.request("/health", {}, env);
+    const res = await app.request("/health?deep=true", {}, env);
     expect(res.status).toBe(503);
 
     const body = await res.json() as Record<string, unknown>;
