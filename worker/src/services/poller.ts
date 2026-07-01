@@ -2,7 +2,7 @@ import type { Env, Job } from "../types";
 import { getActiveJobs, updateJob, cleanupIdempotency } from "../db/queries";
 import { getSession } from "./devin";
 import { findPullRequestForIssue, parseIssueUrl, arePrChecksPassing, mergePullRequest } from "./github";
-import { postThreadReply, getUserMention } from "./slack";
+import { postThreadReply, getUserMention, getUserDisplayName } from "./slack";
 import { cleanupCache } from "../db/cache";
 import { getRetryableDeadLetters, markDeadLetterRetried, cleanupOldDeadLetters } from "../db/dead-letters";
 import { getPendingMerges, updatePendingMerge } from "../db/pending-merges";
@@ -91,18 +91,23 @@ async function processDeadLetters(env: Env): Promise<void> {
       const prompt = `Fix the following GitHub issue: ${issueUrl}\n\nTitle: ${issue.title}\n\nPlease investigate the issue, implement a fix, and create a pull request.`;
       const session = await createSession(env, prompt);
 
+      let triggeredByLabel = `slack_user:${payload.user}`;
+      try {
+        const name = await getUserDisplayName(env, payload.user);
+        if (name) triggeredByLabel = name;
+      } catch { /* fall back to user ID */ }
+
       await createJob(env.DB, {
         issue_url: issueUrl,
         issue_number: parsed.number,
         issue_title: issue.title,
         session_id: session.sessionId,
         session_url: session.url,
-        triggered_by: `slack_user:${payload.user}`,
+        triggered_by: triggeredByLabel,
         slack_channel: payload.channel,
         slack_message_ts: payload.messageTs,
       });
 
-      const { postThreadReply } = await import("./slack");
       await postThreadReply(
         env,
         payload.channel,
