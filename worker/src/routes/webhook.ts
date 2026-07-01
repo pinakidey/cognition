@@ -68,16 +68,7 @@ app.post("/webhook/slack", verifySlackSignature, checkRateLimit, async (c) => {
     return c.json({ ok: true });
   }
 
-  // Per-message lock: prevents near-simultaneous reactions from creating
-  // duplicate sessions. Short TTL (60s) so retry reactions work after failure.
-  // findExistingActiveJob in handleRemediation provides long-term dedup.
-  const messageLockKey = `msg_lock:${channel}:${messageTs}`;
-  const isLocked = await checkIdempotency(c.env.DB, messageLockKey, 60);
-  if (isLocked) {
-    return c.json({ ok: true });
-  }
-
-  // Process remediation in background
+  // Process remediation in background (message lock acquired after bot check inside)
   c.executionCtx.waitUntil(
     handleRemediation(c.env, channel, messageTs, user)
   );
@@ -99,6 +90,14 @@ async function handleRemediation(
       logInfo("bot_user_skipped", { user });
       return;
     }
+
+    // Per-message lock: prevents near-simultaneous reactions from creating
+    // duplicate sessions. Acquired after bot check so bots don't consume the lock.
+    // Short TTL (60s) so retry reactions work after failure.
+    // findExistingActiveJob below provides long-term cross-user dedup.
+    const messageLockKey = `msg_lock:${channel}:${messageTs}`;
+    const isLocked = await checkIdempotency(env.DB, messageLockKey, 60);
+    if (isLocked) return;
 
     // Fetch message to extract issue URL (single API call)
     const msg = await getMessage(env, channel, messageTs);
