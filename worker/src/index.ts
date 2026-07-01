@@ -19,7 +19,8 @@ app.notFound((c) => c.json({ error: "Not found" }, 404));
 
 // Error handler
 app.onError((err, c) => {
-  console.error("Unhandled error:", err);
+  const errMsg = err instanceof Error ? err.message : String(err);
+  console.error(JSON.stringify({ level: "error", action: "unhandled_error", error: errMsg, ts: new Date().toISOString() }));
   return c.json({ error: "Internal server error" }, 500);
 });
 

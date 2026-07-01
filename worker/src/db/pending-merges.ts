@@ -50,6 +50,15 @@ export async function getPendingMerges(db: D1Database): Promise<PendingMerge[]> 
   return result.results;
 }
 
+// Deletes resolved (merged/failed) pending merge entries older than 7 days.
+export async function cleanupOldPendingMerges(db: D1Database): Promise<void> {
+  await db
+    .prepare(
+      "DELETE FROM pending_merges WHERE status IN ('merged', 'failed') AND created_at < datetime('now', '-7 days')"
+    )
+    .run();
+}
+
 // Marks a pending merge as merged or increments its attempt count.
 export async function updatePendingMerge(
   db: D1Database,

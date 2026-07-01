@@ -2,6 +2,7 @@ import type { Env } from "../types";
 import { getCached, setCache } from "../db/cache";
 
 const GITHUB_API = "https://api.github.com";
+const FETCH_TIMEOUT_MS = 10_000;
 
 export interface GitHubIssue {
   number: number;
@@ -10,18 +11,25 @@ export interface GitHubIssue {
   html_url: string;
 }
 
-// Makes an authenticated GET request to the GitHub API.
+// Makes an authenticated GET request to the GitHub API with timeout.
 async function githubFetch(
   env: Env,
   path: string
 ): Promise<Response> {
-  return fetch(`${GITHUB_API}${path}`, {
-    headers: {
-      Authorization: `token ${env.GH_TOKEN}`,
-      Accept: "application/vnd.github.v3+json",
-      "User-Agent": "devin-remediation-service",
-    },
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    return await fetch(`${GITHUB_API}${path}`, {
+      headers: {
+        Authorization: `token ${env.GH_TOKEN}`,
+        Accept: "application/vnd.github.v3+json",
+        "User-Agent": "devin-remediation-service",
+      },
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 // Fetches a single GitHub issue by number.
@@ -89,9 +97,12 @@ export async function findPullRequestForIssue(
     items: Array<{ html_url: string; title: string }>;
   };
 
-  const result = data.total_count > 0 && data.items.length > 0
-    ? data.items[0].html_url
-    : null;
+  // Verify the match actually references this specific issue number
+  const matchingItem = data.items.find((item) => {
+    const titleMatch = item.title.match(/#(\d+)/g);
+    return titleMatch?.some((m) => m === `#${issueNumber}`);
+  });
+  const result = matchingItem?.html_url ?? null;
 
   // Only cache positive results — negative results should not be cached
   // because the poller runs every 60s specifically to detect new PRs quickly
@@ -144,24 +155,30 @@ export async function approvePullRequest(
   prNumber: number,
   body: string
 ): Promise<boolean> {
-  const response = await fetch(
-    `${GITHUB_API}/repos/${owner}/${repo}/pulls/${prNumber}/reviews`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `token ${env.GH_TOKEN}`,
-        Accept: "application/vnd.github.v3+json",
-        "User-Agent": "devin-remediation-service",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        event: "APPROVE",
-        body,
-      }),
-    }
-  );
-
-  return response.ok;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const response = await fetch(
+      `${GITHUB_API}/repos/${owner}/${repo}/pulls/${prNumber}/reviews`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `token ${env.GH_TOKEN}`,
+          Accept: "application/vnd.github.v3+json",
+          "User-Agent": "devin-remediation-service",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          event: "APPROVE",
+          body,
+        }),
+        signal: controller.signal,
+      }
+    );
+    return response.ok;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 // Adds a user as an assignee on a GitHub issue.
@@ -172,23 +189,29 @@ export async function assignIssue(
   issueNumber: number,
   assignee: string
 ): Promise<boolean> {
-  const response = await fetch(
-    `${GITHUB_API}/repos/${owner}/${repo}/issues/${issueNumber}/assignees`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `token ${env.GH_TOKEN}`,
-        Accept: "application/vnd.github.v3+json",
-        "User-Agent": "devin-remediation-service",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        assignees: [assignee],
-      }),
-    }
-  );
-
-  return response.ok;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const response = await fetch(
+      `${GITHUB_API}/repos/${owner}/${repo}/issues/${issueNumber}/assignees`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `token ${env.GH_TOKEN}`,
+          Accept: "application/vnd.github.v3+json",
+          "User-Agent": "devin-remediation-service",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          assignees: [assignee],
+        }),
+        signal: controller.signal,
+      }
+    );
+    return response.ok;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 // Checks whether all CI status checks on a PR are passing.
@@ -268,24 +291,31 @@ export async function mergePullRequest(
   prNumber: number,
   sha: string
 ): Promise<boolean> {
-  const response = await fetch(
-    `${GITHUB_API}/repos/${owner}/${repo}/pulls/${prNumber}/merge`,
-    {
-      method: "PUT",
-      headers: {
-        Authorization: `token ${env.GH_TOKEN}`,
-        Accept: "application/vnd.github.v3+json",
-        "User-Agent": "devin-remediation-service",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        merge_method: "squash",
-        sha,
-      }),
-    }
-  );
-
-  return response.ok;
+  const mergeMethod = env.MERGE_METHOD ?? "squash";
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const response = await fetch(
+      `${GITHUB_API}/repos/${owner}/${repo}/pulls/${prNumber}/merge`,
+      {
+        method: "PUT",
+        headers: {
+          Authorization: `token ${env.GH_TOKEN}`,
+          Accept: "application/vnd.github.v3+json",
+          "User-Agent": "devin-remediation-service",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          merge_method: mergeMethod,
+          sha,
+        }),
+        signal: controller.signal,
+      }
+    );
+    return response.ok;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 // Extracts owner, repo, and PR number from a GitHub pull request URL.

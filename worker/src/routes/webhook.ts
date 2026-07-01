@@ -3,53 +3,20 @@ import type { Env, SlackEventPayload } from "../types";
 import { verifySlackSignature } from "../middleware/slack-verify";
 import { checkRateLimit } from "../middleware/rate-limit";
 import { checkIdempotency, findExistingActiveJob, findCompletedJobWithPr, createJob } from "../db/queries";
-import { getMessage, getMessageText, getMessageAttachments, postThreadReply, getUserEmail, getUserDisplayName } from "../services/slack";
+import { getMessage, getMessageText, getMessageAttachments, postThreadReply, getUserEmail, getUserDisplayName, isSlackBot } from "../services/slack";
 import { parseIssueUrl, parsePrUrl, getIssue, findGitHubUserByEmail, approvePullRequest, assignIssue, arePrChecksPassing, mergePullRequest } from "../services/github";
 import { createSession } from "../services/devin";
 import { logAuditEvent } from "../db/audit";
 import { enqueueDeadLetter } from "../db/dead-letters";
 import { enqueuePendingMerge } from "../db/pending-merges";
+import { extractGithubIssueUrl, extractGithubPrUrl } from "../services/url-extract";
+import { logInfo, logError } from "../services/logger";
 
 const ROCKET_EMOJI = "rocket";
 const APPROVE_EMOJI = "white_check_mark";
 
 const app = new Hono<{ Bindings: Env; Variables: { rawBody: string } }>();
 
-// Extracts a GitHub issue URL from message text or attachments.
-function extractGithubIssueUrl(
-  text: string,
-  attachments: Array<Record<string, string>> | null
-): string | null {
-  const pattern = /https:\/\/github\.com\/[^/]+\/[^/]+\/issues\/\d+/;
-
-  // Try attachment title first — GitHub's Slack integration puts the
-  // actual issue URL in the title field (e.g. "<url|#21 Title>").
-  // This must be checked before text/fallback which may reference other issues.
-  if (attachments) {
-    for (const att of attachments) {
-      const title = att["title"] ?? "";
-      const titleMatch = title.match(pattern);
-      if (titleMatch) return titleMatch[0];
-    }
-  }
-
-  // Try message text
-  const match = text.match(pattern);
-  if (match) return match[0];
-
-  // Try other attachment fields as fallback
-  if (attachments) {
-    for (const att of attachments) {
-      for (const field of ["title_link", "fallback", "text"]) {
-        const val = att[field] ?? "";
-        const attMatch = val.match(pattern);
-        if (attMatch) return attMatch[0];
-      }
-    }
-  }
-
-  return null;
-}
 
 app.post("/webhook/slack", verifySlackSignature, checkRateLimit, async (c) => {
   const body = c.get("rawBody");
@@ -94,6 +61,12 @@ app.post("/webhook/slack", verifySlackSignature, checkRateLimit, async (c) => {
     return c.json({ ok: true });
   }
 
+  // Reject bot users from triggering expensive Devin sessions
+  const isBotUser = await isSlackBot(c.env, user);
+  if (isBotUser) {
+    return c.json({ ok: true });
+  }
+
   // Idempotency check (per-user: prevents Slack retries)
   const idempotencyKey = `${channel}:${messageTs}:${user}`;
   const isDuplicate = await checkIdempotency(c.env.DB, idempotencyKey);
@@ -131,14 +104,21 @@ async function handleRemediation(
     const issueUrl = extractGithubIssueUrl(msg.text, msg.attachments);
 
     if (!issueUrl) {
-      console.log(`No GitHub issue URL found in message ${messageTs}`);
+      logInfo("no_issue_url", { messageTs });
       return;
     }
 
     // Parse issue URL
     const parsed = parseIssueUrl(issueUrl);
     if (!parsed) {
-      console.log(`Could not parse issue URL: ${issueUrl}`);
+      logInfo("unparseable_issue_url", { issueUrl });
+      return;
+    }
+
+    // Restrict to configured repository
+    const configuredRepo = env.GITHUB_REPO;
+    if (configuredRepo && `${parsed.owner}/${parsed.repo}` !== configuredRepo) {
+      logInfo("repo_mismatch", { repo: `${parsed.owner}/${parsed.repo}`, configured: configuredRepo });
       return;
     }
 
@@ -224,7 +204,7 @@ async function handleRemediation(
         }
       }
     } catch (assignErr) {
-      console.error("Non-critical: issue assignment failed:", assignErr);
+      logError("issue_assignment_failed", assignErr, { issueNumber: parsed.number });
     }
 
     // Audit log: non-critical — don't let failures mask successful remediation
@@ -237,7 +217,7 @@ async function handleRemediation(
         details: `Issue #${parsed.number}: ${issue.title} → Session ${session.sessionId}`,
       });
     } catch (auditErr) {
-      console.error("Non-critical: audit log write failed:", auditErr);
+      logError("audit_log_write_failed", auditErr);
     }
 
     // Notify in thread
@@ -249,7 +229,7 @@ async function handleRemediation(
       `🚀 Remediation started for issue #${parsed.number}: "${issue.title}"${mention}\n🔗 Session: ${session.url}`
     );
   } catch (err) {
-    console.error("Error in handleRemediation:", err);
+    logError("handle_remediation_failed", err, { channel, messageTs });
 
     // Dead-letter queue: store failed event for retry
     try {
@@ -260,7 +240,7 @@ async function handleRemediation(
         err instanceof Error ? err.message : "Unknown error"
       );
     } catch (dlErr) {
-      console.error("Failed to enqueue dead letter:", dlErr);
+      logError("dead_letter_enqueue_failed", dlErr);
     }
 
     await postThreadReply(
@@ -270,40 +250,6 @@ async function handleRemediation(
       `❌ An internal error occurred while processing this reaction. Please try again.`
     );
   }
-}
-
-// Extracts a GitHub pull request URL from message text or attachments.
-function extractGithubPrUrl(
-  text: string,
-  attachments: Array<Record<string, string>> | null
-): string | null {
-  const pattern = /https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/\d+/;
-
-  // Check attachment title first
-  if (attachments) {
-    for (const att of attachments) {
-      const title = att["title"] ?? "";
-      const titleMatch = title.match(pattern);
-      if (titleMatch) return titleMatch[0];
-    }
-  }
-
-  // Try message text
-  const match = text.match(pattern);
-  if (match) return match[0];
-
-  // Fallback to other attachment fields
-  if (attachments) {
-    for (const att of attachments) {
-      for (const field of ["title_link", "fallback", "text"]) {
-        const val = att[field] ?? "";
-        const attMatch = val.match(pattern);
-        if (attMatch) return attMatch[0];
-      }
-    }
-  }
-
-  return null;
 }
 
 // Handles ✅ reaction: maps Slack user to GitHub, submits PR approval with attribution.
@@ -332,7 +278,7 @@ async function handleApproval(
             details: "User not in APPROVAL_ALLOWLIST",
           });
         } catch (auditErr) {
-          console.error("Non-critical: audit log write failed:", auditErr);
+          logError("audit_log_write_failed", auditErr);
         }
         return;
       }
@@ -348,6 +294,13 @@ async function handleApproval(
 
     const parsed = parsePrUrl(prUrl);
     if (!parsed) return;
+
+    // Restrict approvals to configured repository
+    const configuredRepo = env.GITHUB_REPO;
+    if (configuredRepo && `${parsed.owner}/${parsed.repo}` !== configuredRepo) {
+      logInfo("approval_repo_mismatch", { repo: `${parsed.owner}/${parsed.repo}`, configured: configuredRepo });
+      return;
+    }
 
     // Look up Slack user's email
     const email = await getUserEmail(env, slackUserId);
@@ -399,7 +352,7 @@ async function handleApproval(
           details: `PR #${parsed.number} in ${parsed.owner}/${parsed.repo}`,
         });
       } catch (auditErr) {
-        console.error("Non-critical: audit log write failed:", auditErr);
+        logError("audit_log_write_failed", auditErr);
       }
 
       // Auto-merge if all CI checks are passing
@@ -468,7 +421,7 @@ async function handleApproval(
           );
         }
       } catch (mergeErr) {
-        console.error("Auto-merge attempt failed:", mergeErr);
+        logError("auto_merge_failed", mergeErr, { prNumber: parsed.number });
         // Still queue it so the poller can retry
         try {
           await enqueuePendingMerge(env.DB, {
@@ -505,19 +458,17 @@ async function handleApproval(
           details: "GitHub API rejected the approval request",
         });
       } catch (auditErr) {
-        console.error("Non-critical: audit log write failed:", auditErr);
+        logError("audit_log_write_failed", auditErr);
       }
     }
   } catch (err) {
-    console.error("Error in handleApproval:", err);
-    // Temporary: post error to thread for debugging
+    logError("handle_approval_failed", err, { channel, messageTs });
     try {
-      const errMsg = err instanceof Error ? err.message : String(err);
       await postThreadReply(
         env,
         channel,
         messageTs,
-        `❌ Approval error (debug): ${errMsg}`
+        `❌ An internal error occurred while processing the approval. Please try again.`
       );
     } catch {
       // ignore post failure

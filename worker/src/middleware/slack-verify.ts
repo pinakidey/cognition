@@ -7,7 +7,6 @@ export async function verifySlackSignature(
   next: Next
 ): Promise<Response | void> {
   if (!c.env.SLACK_SIGNING_SECRET) {
-    console.warn("No SLACK_SIGNING_SECRET configured — rejecting request");
     return c.json({ error: "Not configured" }, 500);
   }
 

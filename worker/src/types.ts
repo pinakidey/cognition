@@ -8,6 +8,7 @@ export interface Env {
   ADMIN_API_KEY?: string;
   GITHUB_REPO: string;
   APPROVAL_ALLOWLIST?: string;
+  MERGE_METHOD?: string;
   MOCK_MODE?: string;
 }
 

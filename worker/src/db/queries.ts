@@ -64,40 +64,32 @@ export async function getAllJobs(db: D1Database): Promise<Job[]> {
   return result.results;
 }
 
+const UPDATABLE_JOB_COLUMNS = [
+  "status",
+  "session_id",
+  "session_url",
+  "pr_url",
+  "error_message",
+  "last_status",
+  "retry_count",
+] as const;
+
+type UpdatableJobColumn = (typeof UPDATABLE_JOB_COLUMNS)[number];
+
 // Partially updates a job's fields (status, PR URL, etc.) by ID.
 export async function updateJob(
   db: D1Database,
   jobId: number,
-  updates: Partial<
-    Pick<
-      Job,
-      | "status"
-      | "session_id"
-      | "session_url"
-      | "pr_url"
-      | "error_message"
-      | "last_status"
-      | "retry_count"
-    >
-  >
+  updates: Partial<Pick<Job, UpdatableJobColumn>>
 ): Promise<void> {
   const fields: string[] = [];
   const values: (string | number | null)[] = [];
 
-  for (const [key, value] of Object.entries(updates)) {
-    // Whitelist allowed columns
-    const allowed = [
-      "status",
-      "session_id",
-      "session_url",
-      "pr_url",
-      "error_message",
-      "last_status",
-      "retry_count",
-    ];
-    if (!allowed.includes(key)) continue;
-    fields.push(`${key} = ?`);
-    values.push(value as string | number | null);
+  for (const col of UPDATABLE_JOB_COLUMNS) {
+    if (col in updates) {
+      fields.push(`${col} = ?`);
+      values.push(updates[col] as string | number | null);
+    }
   }
 
   if (fields.length === 0) return;

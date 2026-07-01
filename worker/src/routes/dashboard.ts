@@ -9,8 +9,10 @@ import { verifyAdminKey } from "../middleware/auth";
 function formatTriggeredBy(value: string | null): string {
   if (!value) return "";
   if (value.startsWith("slack_user:")) {
-    const parts = value.split(":");
-    return parts[2] || parts[1] || value;
+    const firstColon = value.indexOf(":");
+    const secondColon = value.indexOf(":", firstColon + 1);
+    if (secondColon !== -1) return value.slice(secondColon + 1);
+    return value.slice(firstColon + 1);
   }
   return value;
 }
@@ -58,10 +60,16 @@ app.get("/", async (c) => {
   };
 
   const escapeHtml = (s: string) =>
-    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 
-  const rows = jobs
-    .slice(0, 25)
+  const rawPage = parseInt(new URL(c.req.url).searchParams.get("page") ?? "1", 10);
+  const page = Number.isNaN(rawPage) ? 1 : rawPage;
+  const pageSize = 25;
+  const totalPages = Math.max(1, Math.ceil(jobs.length / pageSize));
+  const currentPage = Math.max(1, Math.min(page, totalPages));
+  const pageJobs = jobs.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  const rows = pageJobs
     .map((job) => {
       const icon = statusIcons[job.status] ?? "❓";
       const prLink = job.pr_url
@@ -83,7 +91,7 @@ app.get("/", async (c) => {
     })
     .join("");
 
-  const page = `<!DOCTYPE html>
+  const htmlPage = `<!DOCTYPE html>
 <html>
 <head>
   <title>Devin Remediation Dashboard</title>
@@ -102,6 +110,10 @@ app.get("/", async (c) => {
     tr:hover { background: #f8f9fa; }
     a { color: #0066cc; text-decoration: none; }
     a:hover { text-decoration: underline; }
+    .pagination { margin-top: 16px; text-align: center; padding: 12px; }
+    .pagination a { display: inline-block; padding: 8px 16px; margin: 0 4px; background: #0066cc; color: white; border-radius: 4px; text-decoration: none; }
+    .pagination a:hover { background: #0052a3; }
+    .pagination span { display: inline-block; padding: 8px 16px; margin: 0 4px; color: #666; }
   </style>
 </head>
 <body>
@@ -123,10 +135,20 @@ app.get("/", async (c) => {
     </thead>
     <tbody>${rows || "<tr><td colspan='7' style='text-align:center;color:#666;'>No jobs yet</td></tr>"}</tbody>
   </table>
+  <div class="pagination">
+    ${currentPage > 1 ? `<a href="?page=${currentPage - 1}">&laquo; Prev</a>` : ""}
+    <span>Page ${currentPage} of ${totalPages}</span>
+    ${currentPage < totalPages ? `<a href="?page=${currentPage + 1}">Next &raquo;</a>` : ""}
+  </div>
 </body>
 </html>`;
 
-  return c.html(page);
+  return c.html(htmlPage, 200, {
+    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; img-src https:; connect-src 'self'",
+    "X-Frame-Options": "DENY",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+  });
 });
 
 app.get("/audit", verifyAdminKey, async (c) => {
