@@ -61,12 +61,6 @@ app.post("/webhook/slack", verifySlackSignature, checkRateLimit, async (c) => {
     return c.json({ ok: true });
   }
 
-  // Reject bot users from triggering expensive Devin sessions
-  const isBotUser = await isSlackBot(c.env, user);
-  if (isBotUser) {
-    return c.json({ ok: true });
-  }
-
   // Idempotency check (per-user: prevents Slack retries)
   const idempotencyKey = `${channel}:${messageTs}:${user}`;
   const isDuplicate = await checkIdempotency(c.env.DB, idempotencyKey);
@@ -99,6 +93,13 @@ async function handleRemediation(
   user: string
 ): Promise<void> {
   try {
+    // Reject bot users from triggering expensive Devin sessions
+    const isBotUser = await isSlackBot(env, user);
+    if (isBotUser) {
+      logInfo("bot_user_skipped", { user });
+      return;
+    }
+
     // Fetch message to extract issue URL (single API call)
     const msg = await getMessage(env, channel, messageTs);
     const issueUrl = extractGithubIssueUrl(msg.text, msg.attachments);
