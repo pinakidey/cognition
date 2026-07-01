@@ -2,6 +2,26 @@
 
 Event-driven issue remediation service that uses the [Devin API](https://docs.devin.ai/api-reference/overview) to automatically fix GitHub issues triggered by human approval in Slack.
 
+## Table of Contents
+
+- [How It All Comes Together](#how-it-all-comes-together)
+- [Business Impact](#business-impact)
+- [Rated by Devin](#rated-by-devin)
+- [Tech Stack](#tech-stack)
+- [Live Deployment](#live-deployment)
+- [Architecture](#architecture)
+- [Project Structure](#project-structure)
+- [Endpoints](#endpoints)
+- [Devin API Endpoints Used](#devin-api-endpoints-used)
+- [How It Works](#how-it-works)
+- [Monthly Cost Estimate](#monthly-cost-estimate)
+- [Configuration](#configuration)
+- [Deployment](#deployment)
+- [Local Development](#local-development)
+- [Security](#security)
+- [Observability](#observability)
+- [Testing](#testing)
+
 ## How It All Comes Together
 
 ![Workflow](doc/workflow-illustration.png)
@@ -203,6 +223,23 @@ cognition/
 | `GET` | `/status` | Public | JSON API for metrics and job tracking |
 | `POST` | `/retry/{job_id}` | `X-Admin-Key` | Retry a failed/timed-out job |
 | `GET` | `/health` | Public | Health check |
+
+## Devin API Endpoints Used
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| `POST` | `/v1/sessions` | Creates a new Devin AI session with a remediation prompt (triggered by 🚀 reaction) |
+| `GET` | `/v1/sessions/{session_id}` | Polls session status (running/blocked/finished), extracts PR URL for Slack notification |
+
+**Base URL:** `https://api.devin.ai`  
+**Auth:** Bearer token via `DEVIN_API_KEY` env secret  
+**Retry policy:** Exponential backoff (2s → 4s → 8s), max 3 attempts on 5xx errors  
+
+**Response fields consumed from `GET /v1/sessions/{id}`:**
+- `status` — drives progress updates and completion detection
+- `structured_output.pull_request_url` — primary PR URL source
+- `pull_request.html_url` — fallback PR URL (browser link)
+- `title` — session title for logging
 
 ## How It Works
 

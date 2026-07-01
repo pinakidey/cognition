@@ -5,6 +5,16 @@ import { getAllJobs, getJobStats } from "../db/queries";
 import { getRecentAuditLogs } from "../db/audit";
 import { verifyAdminKey } from "../middleware/auth";
 
+// Extracts display name from composite triggered_by format (slack_user:<id>:<name>).
+function formatTriggeredBy(value: string | null): string {
+  if (!value) return "";
+  if (value.startsWith("slack_user:")) {
+    const parts = value.split(":");
+    return parts[2] || parts[1] || value;
+  }
+  return value;
+}
+
 const app = new Hono<{ Bindings: Env }>();
 
 app.get("/status", async (c) => {
@@ -67,7 +77,7 @@ app.get("/", async (c) => {
         <td>${icon} ${escapeHtml(job.status)}</td>
         <td>${sessionLink}</td>
         <td>${prLink}</td>
-        <td>${escapeHtml(job.triggered_by ?? "")}</td>
+        <td>${escapeHtml(formatTriggeredBy(job.triggered_by))}</td>
         <td>${escapeHtml(job.created_at.slice(0, 16))}</td>
       </tr>`;
     })
