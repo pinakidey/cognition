@@ -94,8 +94,8 @@ async function processDeadLetters(env: Env): Promise<void> {
       let triggeredByLabel = `slack_user:${payload.user}`;
       try {
         const name = await getUserDisplayName(env, payload.user);
-        if (name) triggeredByLabel = name;
-      } catch { /* fall back to user ID */ }
+        if (name) triggeredByLabel = `slack_user:${payload.user}:${name}`;
+      } catch { /* fall back to user ID only */ }
 
       await createJob(env.DB, {
         issue_url: issueUrl,
@@ -391,7 +391,8 @@ async function markJobCompleted(
     // Only @-mention if triggered by a human (not a bot)
     let mentionText = "";
     if (triggeredBy.startsWith("slack_user:")) {
-      const userId = triggeredBy.replace("slack_user:", "");
+      const parts = triggeredBy.split(":");
+      const userId = parts[1];
       const mention = await getUserMention(userId);
       if (mention) {
         mentionText = ` ${mention} — ready for your review.`;

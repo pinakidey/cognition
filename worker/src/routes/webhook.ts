@@ -193,12 +193,12 @@ async function handleRemediation(
     const prompt = `Fix the following GitHub issue: ${issueUrl}\n\nTitle: ${issue.title}\n\nPlease investigate the issue, implement a fix, and create a pull request.`;
     const session = await createSession(env, prompt);
 
-    // Resolve Slack user ID to display name for the dashboard
+    // Store as slack_user:<id>:<display_name> for both mention and dashboard display
     let triggeredByLabel = `slack_user:${user}`;
     try {
       const name = await getUserDisplayName(env, user);
-      if (name) triggeredByLabel = name;
-    } catch { /* fall back to user ID */ }
+      if (name) triggeredByLabel = `slack_user:${user}:${name}`;
+    } catch { /* fall back to user ID only */ }
 
     // Create job record
     await createJob(env.DB, {
