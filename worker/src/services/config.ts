@@ -31,3 +31,46 @@ export function isRepoAllowed(env: Env, repo: string): boolean {
   const allowed = getAllowedRepos(env);
   return allowed.size === 0 || allowed.has(repo);
 }
+
+// Parses APPROVAL_ALLOWLIST into per-repo and global user sets.
+// Format: "repo1:user1,user2;repo2:user3" with bare "user4" as global.
+function parseApprovalAllowlist(value: string | undefined): { perRepo: Map<string, Set<string>>; global: Set<string> } {
+  const perRepo = new Map<string, Set<string>>();
+  const global = new Set<string>();
+  if (!value) return { perRepo, global };
+
+  for (const segment of value.split(";")) {
+    const trimmed = segment.trim();
+    if (!trimmed) continue;
+
+    const colonIdx = trimmed.indexOf(":");
+    if (colonIdx === -1) {
+      // No colon — treat each comma-separated entry as a global user
+      for (const u of trimmed.split(",")) {
+        const id = u.trim();
+        if (id) global.add(id);
+      }
+    } else {
+      const repo = trimmed.slice(0, colonIdx).trim();
+      const users = trimmed.slice(colonIdx + 1);
+      if (!repo) continue;
+      const set = perRepo.get(repo) ?? new Set<string>();
+      for (const u of users.split(",")) {
+        const id = u.trim();
+        if (id) set.add(id);
+      }
+      perRepo.set(repo, set);
+    }
+  }
+  return { perRepo, global };
+}
+
+// Checks whether the given Slack user is allowed to approve PRs for the given repo.
+export function isApprovalAllowed(env: Env, slackUserId: string, repo: string): boolean {
+  if (!env.APPROVAL_ALLOWLIST) return true;
+  const { perRepo, global } = parseApprovalAllowlist(env.APPROVAL_ALLOWLIST);
+  if (global.has(slackUserId)) return true;
+  const repoSet = perRepo.get(repo);
+  if (repoSet && repoSet.has(slackUserId)) return true;
+  return false;
+}

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isChannelAllowed, isRepoAllowed, getAllowedChannels, getAllowedRepos } from "../src/services/config";
+import { isChannelAllowed, isRepoAllowed, isApprovalAllowed, getAllowedChannels, getAllowedRepos } from "../src/services/config";
 import type { Env } from "../src/types";
 
 function makeEnv(overrides: Partial<Env> = {}): Env {
@@ -95,6 +95,41 @@ describe("config utilities", () => {
     it("rejects unlisted repo", () => {
       const env = makeEnv({ ALLOWED_REPOS: "org/repo1" });
       expect(isRepoAllowed(env, "other/repo")).toBe(false);
+    });
+  });
+
+  describe("isApprovalAllowed", () => {
+    it("allows all users when no allowlist set", () => {
+      const env = makeEnv();
+      expect(isApprovalAllowed(env, "U001", "org/repo1")).toBe(true);
+    });
+
+    it("allows global users for any repo", () => {
+      const env = makeEnv({ APPROVAL_ALLOWLIST: "U001,U002" });
+      expect(isApprovalAllowed(env, "U001", "org/repo1")).toBe(true);
+      expect(isApprovalAllowed(env, "U002", "org/repo2")).toBe(true);
+    });
+
+    it("allows per-repo users only for their repo", () => {
+      const env = makeEnv({ APPROVAL_ALLOWLIST: "org/repo1:U001,U002;org/repo2:U003" });
+      expect(isApprovalAllowed(env, "U001", "org/repo1")).toBe(true);
+      expect(isApprovalAllowed(env, "U002", "org/repo1")).toBe(true);
+      expect(isApprovalAllowed(env, "U003", "org/repo2")).toBe(true);
+      expect(isApprovalAllowed(env, "U001", "org/repo2")).toBe(false);
+      expect(isApprovalAllowed(env, "U003", "org/repo1")).toBe(false);
+    });
+
+    it("global users override per-repo restrictions", () => {
+      const env = makeEnv({ APPROVAL_ALLOWLIST: "U001;org/repo1:U002" });
+      expect(isApprovalAllowed(env, "U001", "org/repo1")).toBe(true);
+      expect(isApprovalAllowed(env, "U001", "org/repo2")).toBe(true);
+      expect(isApprovalAllowed(env, "U002", "org/repo1")).toBe(true);
+      expect(isApprovalAllowed(env, "U002", "org/repo2")).toBe(false);
+    });
+
+    it("rejects unlisted users", () => {
+      const env = makeEnv({ APPROVAL_ALLOWLIST: "org/repo1:U001" });
+      expect(isApprovalAllowed(env, "U999", "org/repo1")).toBe(false);
     });
   });
 });
