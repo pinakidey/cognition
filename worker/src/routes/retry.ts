@@ -6,7 +6,7 @@ import { createSession } from "../services/devin";
 import { postThreadReply, getMessage } from "../services/slack";
 import { parseIssueUrl, getIssue } from "../services/github";
 import { extractGithubIssueUrl } from "../services/url-extract";
-import { isRepoAllowed } from "../services/config";
+import { isRepoAllowed, isChannelAllowed } from "../services/config";
 import { logAuditEvent } from "../db/audit";
 import { logError } from "../services/logger";
 
@@ -84,6 +84,10 @@ app.post("/admin/e2e-test", verifyAdminKey, async (c) => {
 
   const { channel, message_ts: messageTs } = body;
   const botUser = "e2e_test";
+
+  if (!isChannelAllowed(c.env, channel)) {
+    return c.json({ error: `Channel ${channel} not in SLACK_CHANNEL_IDS` }, 403);
+  }
 
   try {
     const msg = await getMessage(c.env, channel, messageTs);
