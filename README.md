@@ -297,7 +297,7 @@ The service itself runs entirely on Cloudflare's free tier. The primary cost dri
 
 Configuration is split between **secrets** (sensitive credentials, stored as GitHub repo secrets) and **variables** (non-sensitive config, stored as GitHub repo variables).
 
-### Secrets (GitHub Repo Secrets → Cloudflare Worker Secrets)
+### Secrets (GitHub Repo Secrets)
 
 | Secret | Description |
 |--------|-------------|
@@ -308,13 +308,19 @@ Configuration is split between **secrets** (sensitive credentials, stored as Git
 | `ADMIN_API_KEY` | API key for `/retry` endpoint (optional) |
 | `CF_API_TOKEN` | Cloudflare API token (Workers + D1 Edit permissions) |
 
-### Variables (GitHub Repo Variables → Cloudflare Worker Secrets)
+### Variables (GitHub Repo Variables)
 
 | Variable | Description | Example |
 |----------|-------------|--------|
 | `ALLOWED_REPOS` | Comma-separated list of `owner/repo` allowed to trigger remediation and approval | `org/repo1,org/repo2` |
 | `SLACK_CHANNEL_IDS` | Comma-separated list of Slack channel IDs that can trigger actions | `C0EXAMPLE01,C0EXAMPLE02` |
 | `APPROVAL_ALLOWLIST` | Per-repo or global approval allowlist (see format below) | `org/repo1:USLACKID1` |
+
+#### Screenshots
+
+![GitHub Repository Variables](doc/github-variables.png)
+
+![GitHub Repository Secrets](doc/github-secrets.png)
 
 ### Approval Allowlist Format
 

@@ -72,12 +72,43 @@ Tests the **entire** pipeline including the Slack webhook event. The bot adds a 
 
 **Prerequisites:**
 - `MOCK_MODE` Worker secret set to `"true"` (via `wrangler secret put MOCK_MODE` or deploy workflow)
-- A GitHub issue notification exists in the configured Slack channel
-- The issue is **open** in the target repo
+- `ALLOWED_REPOS`, `SLACK_CHANNEL_IDS`, `APPROVAL_ALLOWLIST` are configured
+
+**Target selection:** Automatically find the most recent issue message in the channel that has **no 🚀 reaction** yet (i.e., not previously triggered):
+
+```bash
+# Find the most recent unreacted issue message
+curl -s -G "https://slack.com/api/conversations.history" \
+  --data-urlencode "channel=<CHANNEL>" \
+  --data-urlencode "limit=50" \
+  -H "Authorization: Bearer $SLACK_BOT_TOKEN" | python3 -c "
+import sys, json, re
+data = json.load(sys.stdin)
+for msg in data.get('messages', []):
+    # Check for GitHub issue URL in text or attachments
+    text = msg.get('text', '')
+    attachments = msg.get('attachments', [])
+    has_issue = bool(re.search(r'github\.com/[^/]+/[^/]+/issues/\d+', text))
+    if not has_issue:
+        for att in attachments:
+            for field in ['title_link', 'text', 'fallback']:
+                if re.search(r'github\.com/[^/]+/[^/]+/issues/\d+', att.get(field, '')):
+                    has_issue = True
+                    break
+    if not has_issue:
+        continue
+    # Check if 🚀 reaction already exists
+    reactions = msg.get('reactions', [])
+    has_rocket = any(r['name'] == 'rocket' for r in reactions)
+    if not has_rocket:
+        print(f'{msg[\"ts\"]}')
+        break
+"
+```
 
 **Trigger:**
 ```bash
-# Bot adds 🚀 reaction to a Slack message containing an issue URL
+# Bot adds 🚀 reaction to the selected message
 curl -s -X POST "https://slack.com/api/reactions.add" \
   -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
   -H "Content-Type: application/json" \
@@ -89,6 +120,8 @@ curl -s -X POST "https://slack.com/api/reactions.add" \
 ### Approach B: Admin endpoint E2E (via /admin/e2e-test)
 
 Tests everything **after** the webhook event. Admin-protected endpoint directly triggers the remediation flow for a given Slack message.
+
+**Target selection:** Use the same auto-detection script from Approach A to find `<MESSAGE_TS>`.
 
 **Trigger:**
 ```bash
