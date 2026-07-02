@@ -52,6 +52,8 @@ This service reduces the engineer's involvement to **two emoji reactions** (~10 
 
 Everything else — implementation, testing, PR creation, progress tracking — happens autonomously.
 
+**Why human-in-the-loop, not fully autonomous?** Not all issues are valid, and not all valid issues are equal priority. A fully autonomous system would burn tokens on low-priority or duplicate issues that an engineer would dismiss in seconds. The HITL design ensures every AI session is intentional — engineers triage first, then trigger remediation only on issues worth fixing.
+
 ### Time Savings
 
 | Metric | Before (Manual) | After (Automated) | Savings |

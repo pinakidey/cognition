@@ -1,6 +1,6 @@
 # Devin Remediation Service — Demo Manuscript
 
-**Format:** 5-minute Loom/Loop video for VP of Engineering audience
+**Format:** 5-minute Loom video for VP of Engineering audience
 **Tone:** Technical but accessible, confident, data-driven
 
 ---
@@ -49,6 +49,8 @@ README "Business Impact" section — the Before/After table
 > "Now multiply that across a team. A hundred bug fixes per month at an average of three hours each — that's $22,500 in engineering time. And those are hours not spent on feature work, architecture improvements, or technical debt reduction."
 >
 > "The question we asked: can we reduce the engineer's involvement to just reviewing the AI's work? Not zero humans — humans still make the decisions — but zero humans doing the tedious implementation work."
+>
+> "Now, you might ask — why not just let Devin fix everything automatically? Because not all issues are valid, and not all valid issues are equal priority. A fully autonomous system would burn tokens on low-priority or duplicate issues that an engineer would dismiss in seconds. The human-in-the-loop design ensures every AI session is intentional — the engineer triages first, then triggers remediation only on issues worth fixing."
 
 ---
 
