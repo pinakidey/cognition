@@ -14,7 +14,7 @@ Dashboard at `https://devin-remediation-service.pinakidey2006.workers.dev/`
 
 > "What if your team's bug-fix workflow required just two emoji reactions instead of four hours of engineering time?"
 >
-> "I'm going to show you a system I built using Devin — Cognition's autonomous software engineering agent — that turns GitHub issue remediation into a fully automated pipeline. Engineers stay in Slack, react with a rocket emoji to approve a fix, and a ready-to-review PR shows up in their thread minutes later."
+> "I'm going to show you a system I built using Devin — Cognition's autonomous software engineering agent — that turns GitHub issue remediation into a fully automated pipeline. Engineers stay in Slack, react with a rocket emoji to kick off a fix, review the PR that Devin delivers in minutes, and react with a checkmark to approve and merge — two reactions, zero context switches."
 >
 > "Let me start with a quick introduction to what Devin is, then walk you through the problem, the live system, the architecture, and why this approach is uniquely powerful."
 
