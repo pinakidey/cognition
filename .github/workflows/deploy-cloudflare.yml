@@ -46,14 +46,16 @@ jobs:
             GH_TOKEN
             SLACK_BOT_TOKEN
             SLACK_SIGNING_SECRET
-            SLACK_CHANNEL_IDS
             ADMIN_API_KEY
+            SLACK_CHANNEL_IDS
+            GITHUB_REPOS
             APPROVAL_ALLOWLIST
         env:
           DEVIN_API_KEY: ${{ secrets.DEVIN_API_KEY }}
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_SIGNING_SECRET: ${{ secrets.SLACK_SIGNING_SECRET }}
-          SLACK_CHANNEL_IDS: ${{ secrets.SLACK_CHANNEL_IDS }}
           ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
+          SLACK_CHANNEL_IDS: ${{ vars.SLACK_CHANNEL_IDS }}
+          GITHUB_REPOS: ${{ vars.GITHUB_REPOS }}
           APPROVAL_ALLOWLIST: ${{ vars.APPROVAL_ALLOWLIST }}
