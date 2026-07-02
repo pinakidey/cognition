@@ -64,18 +64,47 @@ Verify the deployed Worker responds correctly to all public endpoints.
 
 ## Phase 4: Full End-to-End Test
 
-The real E2E test exercises the entire flow from Slack reaction to PR merge.
+Two automated E2E approaches — both require zero human involvement.
 
-### Prerequisites
+### Approach A: Webhook-level E2E (via MOCK_MODE)
+
+Tests the **entire** pipeline including the Slack webhook event. The bot adds a 🚀 reaction on a Slack message, Slack sends the `reaction_added` webhook to the Worker, and `MOCK_MODE=true` bypasses the `isSlackBot` filter so the bot's own reaction is processed.
+
+**Prerequisites:**
+- `MOCK_MODE` Worker secret set to `"true"` (via `wrangler secret put MOCK_MODE` or deploy workflow)
 - A GitHub issue notification exists in the configured Slack channel
 - The issue is **open** in the target repo
-- `ALLOWED_REPOS`, `SLACK_CHANNEL_IDS`, `APPROVAL_ALLOWLIST` are configured
 
-### Test Steps
+**Trigger:**
+```bash
+# Bot adds 🚀 reaction to a Slack message containing an issue URL
+curl -s -X POST "https://slack.com/api/reactions.add" \
+  -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"channel":"<CHANNEL>","name":"rocket","timestamp":"<MESSAGE_TS>"}'
+```
+
+**Coverage:** Slack webhook delivery → signature verification → event routing → idempotency → bot check bypass → message parsing → issue validation → Devin session → progress updates → PR detection.
+
+### Approach B: Admin endpoint E2E (via /admin/e2e-test)
+
+Tests everything **after** the webhook event. Admin-protected endpoint directly triggers the remediation flow for a given Slack message.
+
+**Trigger:**
+```bash
+curl -s -X POST https://<worker>/admin/e2e-test \
+  -H "X-Admin-Key: $ADMIN_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"channel":"<CHANNEL>","message_ts":"<MESSAGE_TS>"}'
+```
+
+**Coverage:** Message parsing → channel/repo allowlist → issue validation → Devin session → progress updates → PR detection. Skips webhook signature verification and bot check.
+
+### Test Steps (both approaches)
 
 | Step | Action | Verification | Timeout |
 |------|--------|-------------|---------|
-| 4.1 | Add `rocket` reaction to an issue notification in the Slack channel | Worker receives webhook, creates idempotency key | 10s |
+| 4.1 | Trigger remediation (Approach A or B) | Worker creates job, idempotency key set | 10s |
 | 4.2 | Worker creates Devin session | Job appears in `/status` API with `status: "in_progress"` | 30s |
 | 4.3 | Worker posts "Remediation started" in Slack thread | Thread reply visible with session URL | 30s |
 | 4.4 | Poller posts progress updates | Thread reply every 5 minutes with elapsed time | 6min |
@@ -95,6 +124,13 @@ curl -s -G "https://slack.com/api/conversations.replies" \
   --data-urlencode "channel=<CHANNEL>" \
   --data-urlencode "ts=<MESSAGE_TS>" \
   -H "Authorization: Bearer $SLACK_BOT_TOKEN"
+```
+
+### Post-test cleanup (Approach A)
+
+Remove `MOCK_MODE` after testing to restore bot filtering in production:
+```bash
+wrangler secret delete MOCK_MODE
 ```
 
 ### Pass/Fail Criteria
