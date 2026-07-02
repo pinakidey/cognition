@@ -9,7 +9,7 @@ Event-driven issue remediation service that uses the [Devin API](https://docs.de
       <p>Devin Remediation Service - Watch Video</p>
     </a>
     <a href="https://www.loom.com/share/89b2e7adb24143edb8430316adac9bf0">
-      <img style="max-width:300px;" src="https://cdn.loom.com/sessions/thumbnails/89b2e7adb24143edb8430316adac9bf0-dada88a3d3803142-full-play.gif#t=0.1">
+      <img style="max-width:300px;" src="https://cdn.loom.com/sessions/thumbnails/89b2e7adb24143edb8430316adac9bf0-8c5444f3cce76efb.jpg#t=0.1">
     </a>
   </div>
 
