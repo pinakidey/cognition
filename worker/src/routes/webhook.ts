@@ -85,11 +85,13 @@ async function handleRemediation(
   user: string
 ): Promise<void> {
   try {
-    // Reject bot users from triggering expensive Devin sessions
-    const isBotUser = await isSlackBot(env, user);
-    if (isBotUser) {
-      logInfo("bot_user_skipped", { user });
-      return;
+    // Reject bot users from triggering expensive Devin sessions (bypassed in MOCK_MODE for E2E testing)
+    if (env.MOCK_MODE !== "true") {
+      const isBotUser = await isSlackBot(env, user);
+      if (isBotUser) {
+        logInfo("bot_user_skipped", { user });
+        return;
+      }
     }
 
     // Per-message lock: prevents near-simultaneous reactions from creating
