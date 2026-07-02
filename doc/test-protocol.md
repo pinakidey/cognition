@@ -174,12 +174,22 @@ wrangler secret delete MOCK_MODE
 | Phase 2: Static Analysis | PASS | `tsc --noEmit` zero errors |
 | Phase 3: Live Endpoints | PASS | health, health?deep=true, status, dashboard (200 + CSP), webhook (403) |
 | Phase 4: Full E2E (Approach B) | PASS | Issue #28 → PR pinakidey/superset#31 (job #6, ~15min) |
+| Phase 4: Full E2E (Approach A) | PASS | Bot 🚀 → webhook → MOCK_MODE bypass → existing PR detected |
 | Phase 5: Security | PASS | Unsigned=403, no-admin-key=401 |
 
-**E2E timeline (job #6):**
-- 06:34:20 — Job created, Devin session started
+**E2E Approach B timeline (job #6):**
+- 06:34:20 — Job created via `/admin/e2e-test`, Devin session started
 - 06:34:20 — "🧪 E2E Test: Remediation started" posted in Slack thread
 - 06:39:47 — Progress update (5min elapsed)
 - 06:44:47 — Progress update (10min elapsed)
 - ~06:49:xx — PR pinakidey/superset#31 detected, "✅ PR ready" posted in thread
 - Session: `devin-227c4a64690d4238bc7be1bf22b0e4fb`
+
+**E2E Approach A (webhook-level) verified:**
+- Set `MOCK_MODE=true` via `wrangler secret put`
+- Bot added 🚀 reaction to issue #28 message (ts=1782860836.364309)
+- Slack delivered `reaction_added` webhook → Worker verified signature
+- `MOCK_MODE` bypassed `isSlackBot` → full pipeline executed
+- Worker detected existing PR → replied "✅ A PR already exists for issue #28"
+- `MOCK_MODE` deleted, bot reaction removed (cleanup)
+- Result: Full webhook flow confirmed working end-to-end
