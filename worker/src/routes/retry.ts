@@ -1,9 +1,14 @@
 import { Hono } from "hono";
 import type { Env } from "../types";
 import { verifyAdminKey } from "../middleware/auth";
-import { getJobById, updateJob, createJob } from "../db/queries";
+import { getJobById, updateJob, createJob, findExistingActiveJob, findCompletedJobWithPr } from "../db/queries";
 import { createSession } from "../services/devin";
-import { postThreadReply } from "../services/slack";
+import { postThreadReply, getMessage } from "../services/slack";
+import { parseIssueUrl, getIssue } from "../services/github";
+import { extractGithubIssueUrl } from "../services/url-extract";
+import { isRepoAllowed } from "../services/config";
+import { logAuditEvent } from "../db/audit";
+import { logError } from "../services/logger";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -67,6 +72,97 @@ app.post("/retry/:jobId", verifyAdminKey, async (c) => {
       { error: "Failed to create retry session" },
       500
     );
+  }
+});
+
+// Triggers a full E2E remediation test for a given Slack message (skips bot check).
+app.post("/admin/e2e-test", verifyAdminKey, async (c) => {
+  const body = await c.req.json<{ channel: string; message_ts: string }>().catch(() => null);
+  if (!body?.channel || !body?.message_ts) {
+    return c.json({ error: "Required: channel, message_ts" }, 400);
+  }
+
+  const { channel, message_ts: messageTs } = body;
+  const botUser = "e2e_test";
+
+  try {
+    const msg = await getMessage(c.env, channel, messageTs);
+    const issueUrl = extractGithubIssueUrl(msg.text, msg.attachments);
+    if (!issueUrl) {
+      return c.json({ error: "No issue URL found in message" }, 400);
+    }
+
+    const parsed = parseIssueUrl(issueUrl);
+    if (!parsed) {
+      return c.json({ error: `Cannot parse issue URL: ${issueUrl}` }, 400);
+    }
+
+    const fullRepo = `${parsed.owner}/${parsed.repo}`;
+    if (!isRepoAllowed(c.env, fullRepo)) {
+      return c.json({ error: `Repo ${fullRepo} not in ALLOWED_REPOS` }, 403);
+    }
+
+    const existing = await findExistingActiveJob(c.env.DB, issueUrl);
+    if (existing) {
+      return c.json({ error: `Active job already exists for issue #${parsed.number}`, job_id: existing.id }, 409);
+    }
+
+    const completed = await findCompletedJobWithPr(c.env.DB, issueUrl);
+    if (completed) {
+      return c.json({ error: `PR already exists for issue #${parsed.number}`, pr_url: completed.pr_url }, 409);
+    }
+
+    const issue = await getIssue(c.env, parsed.owner, parsed.repo, parsed.number);
+    if (!issue) {
+      return c.json({ error: `GitHub issue #${parsed.number} not found` }, 404);
+    }
+    if (issue.state !== "open") {
+      return c.json({ error: `Issue #${parsed.number} is ${issue.state}` }, 400);
+    }
+
+    const prompt = `Fix the following GitHub issue: ${issueUrl}\n\nTitle: ${issue.title}\n\nPlease investigate the issue, implement a fix, and create a pull request.`;
+    const session = await createSession(c.env, prompt);
+
+    const triggeredByLabel = `e2e_test:${botUser}`;
+
+    const newJob = await createJob(c.env.DB, {
+      issue_url: issueUrl,
+      issue_number: parsed.number,
+      issue_title: issue.title,
+      session_id: session.sessionId,
+      session_url: session.url,
+      triggered_by: triggeredByLabel,
+      slack_channel: channel,
+      slack_message_ts: messageTs,
+    });
+
+    try {
+      await logAuditEvent(c.env.DB, {
+        action: "e2e_test_started",
+        actor_slack_id: botUser,
+        target: issueUrl,
+        details: `E2E test: Issue #${parsed.number}: ${issue.title} -> Session ${session.sessionId}`,
+      });
+    } catch { /* non-critical */ }
+
+    await postThreadReply(
+      c.env,
+      channel,
+      messageTs,
+      `🧪 E2E Test: Remediation started for issue #${parsed.number}: "${issue.title}"\n🔗 Session: ${session.url}`
+    );
+
+    return c.json({
+      ok: true,
+      job_id: newJob.id,
+      issue_number: parsed.number,
+      issue_title: issue.title,
+      session_id: session.sessionId,
+      session_url: session.url,
+    });
+  } catch (err) {
+    logError("e2e_test_failed", err);
+    return c.json({ error: err instanceof Error ? err.message : "Unknown error" }, 500);
   }
 });
 
