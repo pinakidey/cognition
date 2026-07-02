@@ -218,11 +218,15 @@ wrangler secret delete MOCK_MODE
 - ~06:49:xx — PR pinakidey/superset#31 detected, "✅ PR ready" posted in thread
 - Session: `devin-227c4a64690d4238bc7be1bf22b0e4fb`
 
-**E2E Approach A (webhook-level) verified:**
+**E2E Approach A (webhook-level) — issue #25 (job #7):**
 - Set `MOCK_MODE=true` via `wrangler secret put`
-- Bot added 🚀 reaction to issue #28 message (ts=1782860836.364309)
+- Bot added 🚀 reaction to issue #25 message (ts=1782860789.293449)
 - Slack delivered `reaction_added` webhook → Worker verified signature
 - `MOCK_MODE` bypassed `isSlackBot` → full pipeline executed
-- Worker detected existing PR → replied "✅ A PR already exists for issue #28"
-- `MOCK_MODE` deleted, bot reaction removed (cleanup)
-- Result: Full webhook flow confirmed working end-to-end
+- 07:18:21 — Job #7 created, Devin session `f148b44c332d42d5a8b05d05f41375d2` started
+- 07:18:21 — "🚀 Remediation started for issue #25" posted in Slack thread
+- 07:24 → 08:09 — 11 progress updates posted every 5 minutes
+- 08:14:46 — PR pinakidey/superset#37 detected, "✅ PR ready" posted with @-mention
+- `MOCK_MODE` deleted (reaction kept on message as expected)
+- Total time: ~56 minutes from trigger to PR notification
+- Result: Full webhook flow confirmed working end-to-end with PR creation
