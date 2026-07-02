@@ -100,7 +100,7 @@ Critical self-assessment of this solution across key engineering dimensions. Eac
 | **Solution Architecture** | ⭐⭐⭐⭐⭐ | Event-driven webhook → D1 state machine → cron poller. Stateless workers (no in-memory state to lose). Clean module boundaries: `services/`, `routes/`, `middleware/`, `db/` each own a single concern. Every component is independently replaceable without touching others. |
 | **Performance & Scalability** | ⭐⭐⭐⭐⭐ | D1 API cache (`api_cache` table) with 5-min/30-min TTL eliminates redundant GitHub API calls during polling. Single consolidated Slack API call per event (`getMessage()` returns text + attachments together). `Promise.all` concurrent polling for both active sessions and pending merges. `AbortController` timeouts on all external API calls (10s Slack/GitHub, 15s Devin). Sub-5ms cold starts. Free tier supports 5000+ tickets/month without throttling. |
 | **Code Quality & Maintainability** | ⭐⭐⭐⭐⭐ | TypeScript `strict: true` with zero `any` types. 61 unit tests across 13 test files (cache, audit, dead-letters, allowlist, PR-URL parsing, auth, health, webhook, GitHub, dashboard, logger, url-extract, pending-merges). Full mock coverage of D1 database layer. Type-safe SQL column whitelist (`UPDATABLE_JOB_COLUMNS`). Structured JSON logging via `logger.ts`. Shared URL extraction module eliminates duplication. One-liner function comments on all 56+ backend functions. |
-| **Security** | ⭐⭐⭐⭐⭐ | 10-layer defense: HMAC-SHA256 signature verification (5-min replay window), constant-time comparison (padded `timingSafeEqual`), IP-based rate limiting (30/60s), per-event idempotency keys, channel restriction, bot user filtering (`isSlackBot`), `APPROVAL_ALLOWLIST` gating PR approvals, repo restriction on both 🚀 and ✅ flows (`GITHUB_REPO` validation), auth-protected `/audit` + `/retry` endpoints (deny-all when key unset), error message sanitization (no internal details leaked to Slack). Full D1 audit trail. All SQL parameterized with type-safe column whitelist. CSP/X-Frame-Options on dashboard. |
+| **Security** | ⭐⭐⭐⭐⭐ | 10-layer defense: HMAC-SHA256 signature verification (5-min replay window), constant-time comparison (padded `timingSafeEqual`), IP-based rate limiting (30/60s), per-event idempotency keys, channel restriction, bot user filtering (`isSlackBot`), `APPROVAL_ALLOWLIST` gating PR approvals, repo restriction on both 🚀 and ✅ flows (`ALLOWED_REPOS` validation), auth-protected `/audit` + `/retry` endpoints (deny-all when key unset), error message sanitization (no internal details leaked to Slack). Full D1 audit trail. All SQL parameterized with type-safe column whitelist. CSP/X-Frame-Options on dashboard. |
 | **Cost Efficiency** | ⭐⭐⭐⭐⭐ | $0/mo infrastructure (Workers free: 100K req/day, D1 free: 5M rows read/day, Cron Triggers free). Devin API is the only real cost (~$2-5/session). At 100 tickets/mo: ~$350 total vs. ~$6,700 manual engineering time. 95% cost reduction at scale. |
 | **AI-Native Score** | ⭐⭐⭐⭐⭐ | Two-emoji interface: 🚀 = "fix this", ✅ = "ship it". Zero context switching — engineer stays in Slack, never opens IDE for triage. AI handles investigation, implementation, and PR creation. Service is pure orchestration (no business logic, no code generation). Human retains full review authority. |
 | **Developer Experience** | ⭐⭐⭐⭐⭐ | Live dashboard with real-time job status, pagination, and CSP headers. Slack thread progress updates every 5 minutes. `npm test` runs all 61 tests in <2s with zero external dependencies. `wrangler deploy` ships in <3s. GitHub Actions CI/CD on merge. `/status` JSON API for monitoring integration. Structured JSON logging for Cloudflare log querying. |
@@ -295,17 +295,47 @@ The service itself runs entirely on Cloudflare's free tier. The primary cost dri
 
 ## Configuration
 
-All configuration is via environment variables (set as Worker secrets or GitHub repo secrets):
+Configuration is split between **secrets** (sensitive credentials, stored as GitHub repo secrets) and **variables** (non-sensitive config, stored as GitHub repo variables).
 
-| Variable | Description |
-|----------|-------------|
+### Secrets (GitHub Repo Secrets → Cloudflare Worker Secrets)
+
+| Secret | Description |
+|--------|-------------|
 | `DEVIN_API_KEY` | Devin API key (service or personal) |
 | `GH_TOKEN` | GitHub PAT with `repo` scope (for PR approval + issue validation) |
-| `GITHUB_REPO` | Target repository (default: `pinakidey/superset`) |
 | `SLACK_BOT_TOKEN` | Slack Bot OAuth token |
 | `SLACK_SIGNING_SECRET` | Slack app signing secret for request verification |
-| `SLACK_CHANNEL_ID` | Channel ID for `#devin-report` (restricts which channel can trigger actions) |
 | `ADMIN_API_KEY` | API key for `/retry` endpoint (optional) |
+| `CF_API_TOKEN` | Cloudflare API token (Workers + D1 Edit permissions) |
+
+### Variables (GitHub Repo Variables → Cloudflare Worker Secrets)
+
+| Variable | Description | Example |
+|----------|-------------|--------|
+| `ALLOWED_REPOS` | Comma-separated list of `owner/repo` allowed to trigger remediation and approval | `org/repo1,org/repo2` |
+| `SLACK_CHANNEL_IDS` | Comma-separated list of Slack channel IDs that can trigger actions | `C0EXAMPLE01,C0EXAMPLE02` |
+| `APPROVAL_ALLOWLIST` | Per-repo or global approval allowlist (see format below) | `org/repo1:USLACKID1` |
+
+### Approval Allowlist Format
+
+The `APPROVAL_ALLOWLIST` variable supports three patterns:
+
+```bash
+# Per-repo: only listed users can approve PRs in that specific repo
+APPROVAL_ALLOWLIST="org/repo1:USLACKID1,USLACKID2;org/repo2:USLACKID1"
+
+# Global: listed users can approve PRs in any repo
+APPROVAL_ALLOWLIST="USLACKID1,USLACKID2"
+
+# Mixed: UADMIN is global, USLACKID1 only for repo1
+APPROVAL_ALLOWLIST="UADMIN;org/repo1:USLACKID1"
+```
+
+- `;` separates repo blocks
+- `:` separates repo name from user IDs
+- `,` separates user IDs
+- Bare user IDs (no `:`) are global approvers for all repos
+- If unset, all users can approve (no restriction)
 
 ### Required Slack Bot Scopes
 
@@ -337,7 +367,9 @@ npx wrangler d1 execute remediation-db \    # Run schema migration
   --remote --file=worker/src/db/schema.sql
 ```
 
-### Required GitHub Repo Secrets
+### Required GitHub Configuration
+
+**Repo Secrets** (Settings → Secrets and variables → Actions → Secrets):
 
 | Secret | Description |
 |--------|-------------|
@@ -346,8 +378,15 @@ npx wrangler d1 execute remediation-db \    # Run schema migration
 | `GH_TOKEN` | GitHub PAT with `repo` scope |
 | `SLACK_BOT_TOKEN` | Slack Bot OAuth token |
 | `SLACK_SIGNING_SECRET` | Slack app signing secret |
-| `SLACK_CHANNEL_ID` | Slack channel ID |
 | `ADMIN_API_KEY` | Admin auth for retry endpoint |
+
+**Repo Variables** (Settings → Secrets and variables → Actions → Variables):
+
+| Variable | Description |
+|----------|-------------|
+| `ALLOWED_REPOS` | Comma-separated `owner/repo` list |
+| `SLACK_CHANNEL_IDS` | Comma-separated Slack channel IDs |
+| `APPROVAL_ALLOWLIST` | Per-repo or global approval allowlist (see [format](#approval-allowlist-format)) |
 
 ## Local Development
 
@@ -373,7 +412,9 @@ npx wrangler deploy
 - **Slack signature verification** — All incoming webhooks are verified using HMAC-SHA256 before processing
 - **Rate limiting** — Webhook endpoint is rate-limited (30/min per IP) using D1-backed sliding window
 - **Idempotency** — Atomic INSERT OR IGNORE prevents duplicate processing from Slack retries
-- **Channel restriction** — Only reactions from the configured `SLACK_CHANNEL_ID` trigger remediation
+- **Channel restriction** — Only reactions from configured channels (`SLACK_CHANNEL_IDS`) trigger remediation
+- **Repo restriction** — Both 🚀 and ✅ flows validate the issue/PR repo against `ALLOWED_REPOS`
+- **Per-repo approval allowlist** — `APPROVAL_ALLOWLIST` supports per-repo user scoping
 - **Admin API key** — `/retry` endpoint protected by `X-Admin-Key` header with constant-time comparison
 - **SQL injection prevention** — All queries use parameterized bindings; column names validated against whitelist
 - **No hardcoded secrets** — All credentials are Worker secrets (encrypted at rest)

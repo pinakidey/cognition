@@ -11,6 +11,7 @@ import { enqueueDeadLetter } from "../db/dead-letters";
 import { enqueuePendingMerge } from "../db/pending-merges";
 import { extractGithubIssueUrl, extractGithubPrUrl } from "../services/url-extract";
 import { logInfo, logError } from "../services/logger";
+import { isChannelAllowed, isRepoAllowed, isApprovalAllowed } from "../services/config";
 
 const ROCKET_EMOJI = "rocket";
 const APPROVE_EMOJI = "white_check_mark";
@@ -38,7 +39,7 @@ app.post("/webhook/slack", verifySlackSignature, checkRateLimit, async (c) => {
   const user = event.user;
 
   // Channel restriction — applies to all reaction types
-  if (c.env.SLACK_CHANNEL_ID && channel !== c.env.SLACK_CHANNEL_ID) {
+  if (!isChannelAllowed(c.env, channel)) {
     return c.json({ ok: true });
   }
 
@@ -115,10 +116,10 @@ async function handleRemediation(
       return;
     }
 
-    // Restrict to configured repository
-    const configuredRepo = env.GITHUB_REPO;
-    if (configuredRepo && `${parsed.owner}/${parsed.repo}` !== configuredRepo) {
-      logInfo("repo_mismatch", { repo: `${parsed.owner}/${parsed.repo}`, configured: configuredRepo });
+    // Restrict to configured repositories
+    const fullRepo = `${parsed.owner}/${parsed.repo}`;
+    if (!isRepoAllowed(env, fullRepo)) {
+      logInfo("repo_mismatch", { repo: fullRepo });
       return;
     }
 
@@ -260,30 +261,6 @@ async function handleApproval(
   slackUserId: string
 ): Promise<void> {
   try {
-    // Approval allowlist check
-    if (env.APPROVAL_ALLOWLIST) {
-      const allowlist = env.APPROVAL_ALLOWLIST.split(",").map((s) => s.trim());
-      if (!allowlist.includes(slackUserId)) {
-        await postThreadReply(
-          env,
-          channel,
-          messageTs,
-          "⚠️ You are not authorized to approve PRs via Slack. Contact an admin to be added to the allowlist."
-        );
-        try {
-          await logAuditEvent(env.DB, {
-            action: "approval_denied",
-            actor_slack_id: slackUserId,
-            target: `channel:${channel}:${messageTs}`,
-            details: "User not in APPROVAL_ALLOWLIST",
-          });
-        } catch (auditErr) {
-          logError("audit_log_write_failed", auditErr);
-        }
-        return;
-      }
-    }
-
     // Fetch message to extract PR URL (single API call)
     const msg = await getMessage(env, channel, messageTs);
     const prUrl = extractGithubPrUrl(msg.text, msg.attachments);
@@ -295,10 +272,31 @@ async function handleApproval(
     const parsed = parsePrUrl(prUrl);
     if (!parsed) return;
 
-    // Restrict approvals to configured repository
-    const configuredRepo = env.GITHUB_REPO;
-    if (configuredRepo && `${parsed.owner}/${parsed.repo}` !== configuredRepo) {
-      logInfo("approval_repo_mismatch", { repo: `${parsed.owner}/${parsed.repo}`, configured: configuredRepo });
+    // Restrict approvals to configured repositories
+    const fullRepo = `${parsed.owner}/${parsed.repo}`;
+    if (!isRepoAllowed(env, fullRepo)) {
+      logInfo("approval_repo_mismatch", { repo: fullRepo });
+      return;
+    }
+
+    // Per-repo approval allowlist check
+    if (!isApprovalAllowed(env, slackUserId, fullRepo)) {
+      await postThreadReply(
+        env,
+        channel,
+        messageTs,
+        `⚠️ You are not authorized to approve PRs in ${fullRepo} via Slack. Contact an admin to be added to the allowlist.`
+      );
+      try {
+        await logAuditEvent(env.DB, {
+          action: "approval_denied",
+          actor_slack_id: slackUserId,
+          target: `channel:${channel}:${messageTs}`,
+          details: `User not in APPROVAL_ALLOWLIST for ${fullRepo}`,
+        });
+      } catch (auditErr) {
+        logError("audit_log_write_failed", auditErr);
+      }
       return;
     }
 
