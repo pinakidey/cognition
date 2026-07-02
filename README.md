@@ -318,9 +318,9 @@ Configuration is split between **secrets** (sensitive credentials, stored as Git
 
 #### Screenshots
 
-![GitHub Repository Variables](doc/github-variables.png)
-
 ![GitHub Repository Secrets](doc/github-secrets.png)
+
+![GitHub Repository Variables](doc/github-variables.png)
 
 ### Approval Allowlist Format
 
