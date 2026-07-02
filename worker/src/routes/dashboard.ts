@@ -73,14 +73,14 @@ app.get("/", async (c) => {
     .map((job) => {
       const icon = statusIcons[job.status] ?? "❓";
       const prLink = job.pr_url
-        ? `<a href="${escapeHtml(job.pr_url)}">${escapeHtml(job.pr_url.split("/").pop() ?? "")}</a>`
+        ? `<a href="${escapeHtml(job.pr_url)}" target="_blank">${escapeHtml(job.pr_url.split("/").pop() ?? "")}</a>`
         : "—";
       const sessionLink = job.session_url
-        ? `<a href="${escapeHtml(job.session_url)}">View</a>`
+        ? `<a href="${escapeHtml(job.session_url)}" target="_blank">View</a>`
         : "—";
 
       return `<tr>
-        <td>#${job.issue_number}</td>
+        <td><a href="${escapeHtml(job.issue_url)}" target="_blank">#${job.issue_number}</a></td>
         <td>${escapeHtml(job.issue_title.slice(0, 60))}</td>
         <td>${icon} ${escapeHtml(job.status)}</td>
         <td>${sessionLink}</td>
