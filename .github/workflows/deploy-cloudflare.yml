@@ -46,7 +46,7 @@ jobs:
             GH_TOKEN
             SLACK_BOT_TOKEN
             SLACK_SIGNING_SECRET
-            SLACK_CHANNEL_ID
+            SLACK_CHANNEL_IDS
             ADMIN_API_KEY
             APPROVAL_ALLOWLIST
         env:
@@ -54,6 +54,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_SIGNING_SECRET: ${{ secrets.SLACK_SIGNING_SECRET }}
-          SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
+          SLACK_CHANNEL_IDS: ${{ secrets.SLACK_CHANNEL_IDS }}
           ADMIN_API_KEY: ${{ secrets.ADMIN_API_KEY }}
           APPROVAL_ALLOWLIST: ${{ vars.APPROVAL_ALLOWLIST }}

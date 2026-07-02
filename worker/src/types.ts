@@ -4,9 +4,11 @@ export interface Env {
   GH_TOKEN: string;
   SLACK_BOT_TOKEN: string;
   SLACK_SIGNING_SECRET: string;
-  SLACK_CHANNEL_ID: string;
+  SLACK_CHANNEL_IDS?: string;
+  SLACK_CHANNEL_ID?: string; // deprecated: use SLACK_CHANNEL_IDS
   ADMIN_API_KEY?: string;
-  GITHUB_REPO: string;
+  GITHUB_REPOS?: string;
+  GITHUB_REPO?: string; // deprecated: use GITHUB_REPOS
   APPROVAL_ALLOWLIST?: string;
   MERGE_METHOD?: string;
   MOCK_MODE?: string;

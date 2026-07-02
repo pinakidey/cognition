@@ -22,4 +22,4 @@ persist = true
 invocation_logs = true
 
 [vars]
-GITHUB_REPO = "pinakidey/superset"
+GITHUB_REPOS = "pinakidey/superset"
