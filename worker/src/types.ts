@@ -7,8 +7,8 @@ export interface Env {
   SLACK_CHANNEL_IDS?: string;
   SLACK_CHANNEL_ID?: string; // deprecated: use SLACK_CHANNEL_IDS
   ADMIN_API_KEY?: string;
-  GITHUB_REPOS?: string;
-  GITHUB_REPO?: string; // deprecated: use GITHUB_REPOS
+  ALLOWED_REPOS?: string;
+  GITHUB_REPO?: string; // deprecated: use ALLOWED_REPOS
   APPROVAL_ALLOWLIST?: string;
   MERGE_METHOD?: string;
   MOCK_MODE?: string;

@@ -13,9 +13,9 @@ export function getAllowedChannels(env: Env): Set<string> {
   return channels;
 }
 
-// Returns the set of allowed GitHub repos as "owner/repo" (supports GITHUB_REPOS and legacy GITHUB_REPO).
+// Returns the set of allowed GitHub repos as "owner/repo" (supports ALLOWED_REPOS and legacy GITHUB_REPO).
 export function getAllowedRepos(env: Env): Set<string> {
-  const repos = parseList(env.GITHUB_REPOS);
+  const repos = parseList(env.ALLOWED_REPOS);
   if (env.GITHUB_REPO) repos.add(env.GITHUB_REPO.trim());
   return repos;
 }

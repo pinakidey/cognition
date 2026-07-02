@@ -15,7 +15,7 @@ function createMockEnv(): Env {
     SLACK_BOT_TOKEN: "test",
     SLACK_SIGNING_SECRET: "test",
     SLACK_CHANNEL_IDS: "test",
-    GITHUB_REPOS: "test/repo",
+    ALLOWED_REPOS: "test/repo",
   };
 }
 

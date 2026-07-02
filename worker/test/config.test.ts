@@ -49,16 +49,16 @@ describe("config utilities", () => {
       expect(getAllowedRepos(env).size).toBe(0);
     });
 
-    it("parses GITHUB_REPOS (comma-separated)", () => {
-      const env = makeEnv({ GITHUB_REPOS: "org/repo1,org/repo2" });
+    it("parses ALLOWED_REPOS (comma-separated)", () => {
+      const env = makeEnv({ ALLOWED_REPOS: "org/repo1,org/repo2" });
       const repos = getAllowedRepos(env);
       expect(repos.size).toBe(2);
       expect(repos.has("org/repo1")).toBe(true);
       expect(repos.has("org/repo2")).toBe(true);
     });
 
-    it("merges legacy GITHUB_REPO with GITHUB_REPOS", () => {
-      const env = makeEnv({ GITHUB_REPOS: "org/repo1", GITHUB_REPO: "org/repo2" });
+    it("merges legacy GITHUB_REPO with ALLOWED_REPOS", () => {
+      const env = makeEnv({ ALLOWED_REPOS: "org/repo1", GITHUB_REPO: "org/repo2" });
       const repos = getAllowedRepos(env);
       expect(repos.size).toBe(2);
     });
@@ -88,12 +88,12 @@ describe("config utilities", () => {
     });
 
     it("allows listed repo", () => {
-      const env = makeEnv({ GITHUB_REPOS: "org/repo1,org/repo2" });
+      const env = makeEnv({ ALLOWED_REPOS: "org/repo1,org/repo2" });
       expect(isRepoAllowed(env, "org/repo1")).toBe(true);
     });
 
     it("rejects unlisted repo", () => {
-      const env = makeEnv({ GITHUB_REPOS: "org/repo1" });
+      const env = makeEnv({ ALLOWED_REPOS: "org/repo1" });
       expect(isRepoAllowed(env, "other/repo")).toBe(false);
     });
   });
