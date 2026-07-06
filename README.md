@@ -7,6 +7,10 @@ Event-driven issue remediation service that uses the [Devin API](https://docs.de
 * [Live Demo (self voice - shorter version)](https://www.loom.com/share/04dbe6df83d74126a6069e376334dc4d) (7:30 mins)
 * [Live Demo (AI voice - longer version)](https://www.loom.com/share/89b2e7adb24143edb8430316adac9bf0) (9:36 mins)
 
+## Intro Slides
+
+* [Devin Remediation Service — Slides](https://devin-5aoz32i.gamma.site/)
+
 ## Table of Contents
 
 - [How It All Comes Together](#how-it-all-comes-together)
