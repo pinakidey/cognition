@@ -4,8 +4,8 @@ Event-driven issue remediation service that uses the [Devin API](https://docs.de
 
 ## Intro Video
 
-* [Live Demo (self - shorter version)](https://www.loom.com/share/04dbe6df83d74126a6069e376334dc4d)
-* [Live Demo (AI generated - longer version)](https://www.loom.com/share/89b2e7adb24143edb8430316adac9bf0)
+* [Live Demo (self voice - shorter version)](https://www.loom.com/share/04dbe6df83d74126a6069e376334dc4d)
+* [Live Demo (AI voice - longer version)](https://www.loom.com/share/89b2e7adb24143edb8430316adac9bf0)
 
 ## Table of Contents
 
