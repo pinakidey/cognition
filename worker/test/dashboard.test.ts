@@ -10,8 +10,8 @@ function createMockEnv(overrides: Partial<Env> = {}): Env {
         if (sql.includes("COUNT(*)")) {
           return {
             first: vi.fn(async () => ({
-              total: 3, pending: 0, in_progress: 1, completed: 1, merged: 1,
-              failed: 0, blocked: 0, timed_out: 0, prs_created: 2,
+              total: 2, pending: 0, in_progress: 1, completed: 1,
+              failed: 0, blocked: 0, timed_out: 0, prs_created: 1,
             })),
           };
         }
@@ -27,15 +27,6 @@ function createMockEnv(overrides: Partial<Env> = {}): Env {
                   slack_channel: "C1", slack_message_ts: "1.2", retry_count: 0,
                   last_status: "finished", created_at: "2024-01-01T00:00:00Z",
                   updated_at: "2024-01-01T00:01:00Z",
-                },
-                {
-                  id: 2, issue_url: "https://github.com/o/r/issues/3", issue_number: 3,
-                  issue_title: "Merged Issue", session_id: "s2", session_url: "https://devin.ai/s2",
-                  pr_url: "https://github.com/o/r/pull/4", status: "merged",
-                  error_message: null, triggered_by: "slack_user:U123:John",
-                  slack_channel: "C1", slack_message_ts: "1.3", retry_count: 0,
-                  last_status: "finished", created_at: "2024-01-01T00:02:00Z",
-                  updated_at: "2024-01-01T00:03:00Z",
                 },
               ],
             })),
@@ -84,15 +75,6 @@ describe("Dashboard", () => {
     const html = await res.text();
     // The triggered_by "John: Admin" should be present (colon-safe splitting)
     expect(html).toContain("John: Admin");
-  });
-
-  it("renders a git-merge icon for merged jobs", async () => {
-    const env = createMockEnv();
-    const res = await app.request("/", {}, env);
-    const html = await res.text();
-    expect(html).toContain("merged</td>");
-    expect(html).toContain("<svg");
-    expect(html).toContain("Merged");
   });
 
   it("handles pagination parameter", async () => {

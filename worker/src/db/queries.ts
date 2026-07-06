@@ -64,16 +64,6 @@ export async function getAllJobs(db: D1Database): Promise<Job[]> {
   return result.results;
 }
 
-// Returns completed jobs that have a PR URL — candidates for merge detection.
-export async function getCompletedJobsWithPr(db: D1Database): Promise<Job[]> {
-  const result = await db
-    .prepare(
-      "SELECT * FROM jobs WHERE status = 'completed' AND pr_url IS NOT NULL"
-    )
-    .all<Job>();
-  return result.results;
-}
-
 const UPDATABLE_JOB_COLUMNS = [
   "status",
   "session_id",
@@ -122,7 +112,6 @@ export async function getJobStats(db: D1Database): Promise<JobStats> {
         COALESCE(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), 0) as pending,
         COALESCE(SUM(CASE WHEN status = 'in_progress' THEN 1 ELSE 0 END), 0) as in_progress,
         COALESCE(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END), 0) as completed,
-        COALESCE(SUM(CASE WHEN status = 'merged' THEN 1 ELSE 0 END), 0) as merged,
         COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0) as failed,
         COALESCE(SUM(CASE WHEN status = 'blocked' THEN 1 ELSE 0 END), 0) as blocked,
         COALESCE(SUM(CASE WHEN status = 'timed_out' THEN 1 ELSE 0 END), 0) as timed_out,
@@ -137,7 +126,6 @@ export async function getJobStats(db: D1Database): Promise<JobStats> {
       pending: 0,
       in_progress: 0,
       completed: 0,
-      merged: 0,
       failed: 0,
       blocked: 0,
       timed_out: 0,

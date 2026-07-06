@@ -1,8 +1,8 @@
 import type { Env, Job } from "../types";
-import { getActiveJobs, updateJob, cleanupIdempotency, createJob, findExistingActiveJob, getCompletedJobsWithPr } from "../db/queries";
+import { getActiveJobs, updateJob, cleanupIdempotency, createJob, findExistingActiveJob } from "../db/queries";
 import { getSession } from "./devin";
 import { createSession } from "./devin";
-import { findPullRequestForIssue, parseIssueUrl, getIssue, arePrChecksPassing, mergePullRequest, isPullRequestMerged, parsePrUrl } from "./github";
+import { findPullRequestForIssue, parseIssueUrl, getIssue, arePrChecksPassing, mergePullRequest } from "./github";
 import { postThreadReply, getUserMention, getUserDisplayName, getMessage } from "./slack";
 import { cleanupCache } from "../db/cache";
 import { getRetryableDeadLetters, markDeadLetterRetried, cleanupOldDeadLetters } from "../db/dead-letters";
@@ -29,9 +29,6 @@ export async function pollActiveSessions(env: Env): Promise<void> {
 
   // Process pending merges (auto-merge approved PRs once CI passes)
   await processPendingMerges(env);
-
-  // Detect completed jobs whose PR has since been merged
-  await processMergedJobs(env);
 
   // Periodic cleanup of old dead letters and resolved pending merges
   await cleanupOldDeadLetters(env.DB);
@@ -208,31 +205,6 @@ async function safeThreadReply(
   } catch (err) {
     logError("pending_merge_reply_failed", err);
   }
-}
-
-// Promotes completed jobs to "merged" once their PR has been merged on GitHub.
-async function processMergedJobs(env: Env): Promise<void> {
-  const jobs = await getCompletedJobsWithPr(env.DB);
-  await Promise.all(
-    jobs.map(async (job) => {
-      try {
-        if (!job.pr_url) return;
-        const parsed = parsePrUrl(job.pr_url);
-        if (!parsed) return;
-        const merged = await isPullRequestMerged(
-          env,
-          parsed.owner,
-          parsed.repo,
-          parsed.number
-        );
-        if (merged) {
-          await updateJob(env.DB, job.id, { status: "merged" });
-        }
-      } catch (err) {
-        logError("merged_job_check_failed", err, { jobId: job.id });
-      }
-    })
-  );
 }
 
 // Checks a single job's Devin session status and posts updates on transitions.
