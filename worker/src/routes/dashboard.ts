@@ -27,7 +27,7 @@ app.get("/status", async (c) => {
     ["pending", "in_progress", "blocked"].includes(j.status)
   );
   const recentCompleted = jobs
-    .filter((j) => j.status === "completed")
+    .filter((j) => j.status === "completed" || j.status === "merged")
     .slice(0, 10);
 
   return c.json({
@@ -44,15 +44,21 @@ app.get("/", async (c) => {
 
   const total = stats.total ?? 0;
   const completed = stats.completed ?? 0;
+  const merged = stats.merged ?? 0;
   const inProgress = stats.in_progress ?? 0;
   const failed = stats.failed ?? 0;
   const prsCreated = stats.prs_created ?? 0;
-  const successRate = total > 0 ? `${Math.round((completed / total) * 100)}%` : "N/A";
+  const successRate = total > 0 ? `${Math.round(((completed + merged) / total) * 100)}%` : "N/A";
+
+  // GitHub "git-merge" octicon, colored with GitHub's merged-purple.
+  const mergeIcon =
+    '<svg viewBox="0 0 16 16" width="14" height="14" fill="#8250df" style="vertical-align:middle"><path d="M5.45 5.154A4.25 4.25 0 0 0 9.25 7.5h1.378a2.251 2.251 0 1 1 0 1.5H9.25A5.734 5.734 0 0 1 5 7.123v3.505a2.25 2.25 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.95-.218ZM4.25 13.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm0-8a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm8.5 4.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Z"></path></svg>';
 
   const statusIcons: Record<string, string> = {
     pending: "⏳",
     in_progress: "🔄",
     completed: "✅",
+    merged: mergeIcon,
     failed: "❌",
     blocked: "⏸",
     finished_no_pr: "⚠",
@@ -125,6 +131,7 @@ app.get("/", async (c) => {
     <div class="stat-card"><div class="value">${total}</div><div class="label">Total Jobs</div></div>
     <div class="stat-card"><div class="value">${inProgress}</div><div class="label">In Progress</div></div>
     <div class="stat-card"><div class="value">${completed}</div><div class="label">Completed</div></div>
+    <div class="stat-card"><div class="value">${merged}</div><div class="label">Merged</div></div>
     <div class="stat-card"><div class="value">${failed}</div><div class="label">Failed</div></div>
     <div class="stat-card"><div class="value">${prsCreated}</div><div class="label">PRs Created</div></div>
     <div class="stat-card"><div class="value">${successRate}</div><div class="label">Success Rate</div></div>

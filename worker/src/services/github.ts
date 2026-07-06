@@ -283,6 +283,23 @@ export async function arePrChecksPassing(
   return { passing: true, sha };
 }
 
+// Returns whether a pull request has been merged (null if it can't be determined).
+export async function isPullRequestMerged(
+  env: Env,
+  owner: string,
+  repo: string,
+  prNumber: number
+): Promise<boolean | null> {
+  const response = await githubFetch(
+    env,
+    `/repos/${owner}/${repo}/pulls/${prNumber}`
+  );
+  if (!response.ok) return null;
+
+  const pr = (await response.json()) as { merged?: boolean };
+  return pr.merged === true;
+}
+
 // Merges a pull request using the squash method.
 export async function mergePullRequest(
   env: Env,

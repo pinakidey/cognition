@@ -18,6 +18,7 @@ export type JobStatus =
   | "pending"
   | "in_progress"
   | "completed"
+  | "merged"
   | "failed"
   | "blocked"
   | "timed_out"
@@ -75,6 +76,7 @@ export interface JobStats {
   pending: number;
   in_progress: number;
   completed: number;
+  merged: number;
   failed: number;
   blocked: number;
   timed_out: number;
