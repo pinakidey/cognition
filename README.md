@@ -2,10 +2,10 @@
 
 Event-driven issue remediation service that uses the [Devin API](https://docs.devin.ai/api-reference/overview) to automatically fix GitHub issues triggered by human approval in Slack.
 
-## Intro Video
+## Intro Videos
 
-* [Live Demo (self voice - shorter version)](https://www.loom.com/share/04dbe6df83d74126a6069e376334dc4d)
-* [Live Demo (AI voice - longer version)](https://www.loom.com/share/89b2e7adb24143edb8430316adac9bf0)
+* [Live Demo (self voice - shorter version)](https://www.loom.com/share/04dbe6df83d74126a6069e376334dc4d) (7:30 mins)
+* [Live Demo (AI voice - longer version)](https://www.loom.com/share/89b2e7adb24143edb8430316adac9bf0) (9:36 mins)
 
 ## Table of Contents
 
